@@ -13,6 +13,7 @@ dist-ssr
 dist-desktop
 release
 *.zip
+*.exe
 *.local
 
 # Editor directories and files
