@@ -17,7 +17,7 @@ import { htmlToPlainText, generateDocxBlob } from './services/docManager';
 import type { ATSScoreBreakdown, ExtractedKeyword, Suggestion, LLMConfig } from './types';
 import confetti from 'canvas-confetti';
 import saveAs from 'file-saver';
-import { Trophy, AlertCircle } from 'lucide-react';
+import { Trophy, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function App() {
   const [resumeHtml, setResumeHtml] = useState('');
@@ -51,6 +51,19 @@ export function App() {
   const [humanizerContextTitle, setHumanizerContextTitle] = useState('');
   const [discussingSuggestion, setDiscussingSuggestion] = useState<Suggestion | null>(null);
   const [isDiscussOpen, setIsDiscussOpen] = useState(false);
+  const [currentFilePath, setCurrentFilePath] = useState<string | null>(null);
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+
+  // Load encrypted API key in Electron via Windows DPAPI
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.getSecureKey('apiKey').then((stored) => {
+        if (stored) {
+          setLlmConfig((prev) => ({ ...prev, apiKey: stored }));
+        }
+      });
+    }
+  }, []);
 
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(() => {
     const saved = localStorage.getItem('resume_improver_llm_config');
@@ -215,19 +228,58 @@ export function App() {
     }
   };
 
-  const handleExportDocx = async () => {
+  const handleSaveDocx = useCallback(async () => {
     try {
       const blob = await generateDocxBlob(resumeHtml || '<p>Resume</p>', resumeFileName.replace(/\.docx$/i, ''));
-      saveAs(blob, resumeFileName.endsWith('.docx') ? resumeFileName : `${resumeFileName}.docx`);
+      const buffer = await blob.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+
+      if (window.electronAPI) {
+        if (currentFilePath) {
+          const res = await window.electronAPI.saveDocxDirect(currentFilePath, bytes);
+          if (res.success) {
+            setSaveToast(`Saved directly to ${resumeFileName}`);
+            setTimeout(() => setSaveToast(null), 3000);
+            return;
+          }
+        }
+        const res = await window.electronAPI.saveDocxDialog(bytes, resumeFileName);
+        if (res.success && res.filePath) {
+          setCurrentFilePath(res.filePath);
+          if (res.fileName) setResumeFileName(res.fileName);
+          setSaveToast(`Saved to ${res.fileName || resumeFileName}`);
+          setTimeout(() => setSaveToast(null), 3000);
+        }
+      } else {
+        saveAs(blob, resumeFileName.endsWith('.docx') ? resumeFileName : `${resumeFileName}.docx`);
+      }
     } catch (err) {
-      console.error('Export failed:', err);
-      alert('Error exporting document.');
+      console.error('Save failed:', err);
     }
+  }, [resumeHtml, currentFilePath, resumeFileName]);
+
+  // Global Ctrl + S / Cmd + S desktop shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveDocx();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSaveDocx]);
+
+  const handleExportDocx = async () => {
+    await handleSaveDocx();
   };
 
   const handleSaveSettings = (newConfig: LLMConfig) => {
     setLlmConfig(newConfig);
     localStorage.setItem('resume_improver_llm_config', JSON.stringify(newConfig));
+    if (window.electronAPI && newConfig.apiKey) {
+      window.electronAPI.setSecureKey('apiKey', newConfig.apiKey);
+    }
     // Trigger re-evaluation with updated configuration
     setTimeout(() => {
       evaluateResume(true);
@@ -290,7 +342,12 @@ export function App() {
               handleOpenHumanizer(selectedText, 'Highlighted Resume Selection')
             }
             resumeFileName={resumeFileName}
-            onFileLoaded={(name) => setResumeFileName(name)}
+            currentFilePath={currentFilePath}
+            onSaveDirect={handleSaveDocx}
+            onFileLoaded={(name, path) => {
+              setResumeFileName(name);
+              if (path) setCurrentFilePath(path);
+            }}
             onRegisterInsertSnippet={(inserter) => {
               insertSnippetRef.current = inserter;
             }}
@@ -343,6 +400,14 @@ export function App() {
         config={llmConfig}
         onSave={handleSaveSettings}
       />
+
+      {/* Native Desktop Direct Save Toast */}
+      {saveToast && (
+        <div className="fixed bottom-4 right-4 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-medium border border-slate-700 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{saveToast}</span>
+        </div>
+      )}
     </div>
   );
 }

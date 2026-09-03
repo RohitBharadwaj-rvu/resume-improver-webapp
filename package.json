@@ -1,13 +1,19 @@
 {
   "name": "resume-improver-webapp",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "AI-Powered Resume ATS Optimization & Word Formatting Editor",
+  "author": "Rohit Bharadwaj",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http-get://127.0.0.1:5173 && cross-env ELECTRON_DEV=1 electron .\"",
+    "electron:build": "tsc -b && vite build && electron-builder",
+    "electron:dist": "tsc -b && vite build && electron-builder --win portable nsis"
   },
   "dependencies": {
     "@tiptap/extension-bubble-menu": "^3.30.5",
@@ -36,6 +42,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -46,6 +53,10 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
     "autoprefixer": "^10.5.4",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",
     "oxlint": "^1.79.0",
     "postcss": "^8.5.26",
@@ -53,6 +64,41 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.2.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "com.rohit.resumeimprover",
+    "productName": "Resume ATS Improver",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
