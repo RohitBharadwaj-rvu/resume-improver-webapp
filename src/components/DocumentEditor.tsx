@@ -1,41 +1,25 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import Highlight from '@tiptap/extension-highlight';
-import { TextStyle } from '@tiptap/extension-text-style';
-import Color from '@tiptap/extension-color';
-import { Table } from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
-import TextAlign from '@tiptap/extension-text-align';
-import Placeholder from '@tiptap/extension-placeholder';
-import { parseDocxFile, generateDocxBlob } from '../services/docManager';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { renderAsync } from 'docx-preview';
+import { generateDocxBlob } from '../services/docManager';
 import saveAs from 'file-saver';
 import {
   Bold,
   Italic,
   Underline as UnderlineIcon,
-  Strikethrough,
-  Highlighter,
   Heading1,
   Heading2,
-  Heading3,
   List,
   ListOrdered,
-  Quote,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Table as TableIcon,
   Undo,
   Redo,
   Upload,
   Download,
   Sparkles,
   FileText,
-  Trash2,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface DocumentEditorProps {
@@ -47,156 +31,201 @@ interface DocumentEditorProps {
 }
 
 export const DocumentEditor: React.FC<DocumentEditorProps> = ({
-  initialContent,
   onChange,
   onOpenHumanizerForSelection,
-  resumeFileName = 'My_Resume.docx',
+  resumeFileName = 'Ajitkumar Subramanyam -  PO June 2nd 2026.docx',
   onFileLoaded,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docxContainerRef = useRef<HTMLDivElement>(null);
   const [selectedText, setSelectedText] = useState('');
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
+  const [isLoadingDocx, setIsLoadingDocx] = useState(false);
+  const [zoom, setZoom] = useState<number>(0.85); // 85% zoom fits standard 8.5x11 page perfectly
+  const [wordCount, setWordCount] = useState<number>(0);
+  const [rawBuffer, setRawBuffer] = useState<ArrayBuffer | null>(null);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: {
-          levels: [1, 2, 3],
-        },
-        underline: false as any,
-      }),
-      Underline,
-      Highlight.configure({ multicolor: true }),
-      TextStyle,
-      Color,
-      Table.configure({
-        resizable: true,
-      }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      TextAlign.configure({
-        types: ['heading', 'paragraph'],
-      }),
-      Placeholder.configure({
-        placeholder: 'Paste your resume content or upload a .docx file...',
-      }),
-    ],
-    content: initialContent,
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-    },
-    onSelectionUpdate: ({ editor }) => {
-      const { from, to } = editor.state.selection;
-      if (from !== to) {
-        const text = editor.state.doc.textBetween(from, to, ' ');
-        setSelectedText(text);
-
-        // Position custom bubble menu
-        const domSelection = window.getSelection();
-        if (domSelection && domSelection.rangeCount > 0) {
-          const rect = domSelection.getRangeAt(0).getBoundingClientRect();
-          setSelectionCoords({
-            top: Math.max(10, rect.top - 45),
-            left: rect.left + rect.width / 2,
-          });
-        }
-      } else {
-        setSelectedText('');
-        setSelectionCoords(null);
-      }
-    },
-  });
-
-  useEffect(() => {
-    if (editor && initialContent !== editor.getHTML()) {
-      const isFocused = editor.isFocused;
-      if (!isFocused) {
-        editor.commands.setContent(initialContent, { emitUpdate: false });
-      }
-    }
-  }, [initialContent, editor]);
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !editor) return;
+  // Load and render a docx buffer using docx-preview
+  const renderDocx = useCallback(async (buffer: ArrayBuffer) => {
+    if (!docxContainerRef.current) return;
+    setIsLoadingDocx(true);
+    setRawBuffer(buffer);
 
     try {
-      if (file.name.endsWith('.docx')) {
-        const { html } = await parseDocxFile(file);
-        editor.commands.setContent(html);
-        onChange(html);
-        if (onFileLoaded) onFileLoaded(file.name);
-      } else {
-        const text = await file.text();
-        editor.commands.setContent(`<p>${text.replace(/\n/g, '<br>')}</p>`);
-        onChange(editor.getHTML());
-        if (onFileLoaded) onFileLoaded(file.name);
+      docxContainerRef.current.innerHTML = '';
+      await renderAsync(buffer, docxContainerRef.current, undefined, {
+        className: 'docx-preview',
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        ignoreFonts: false,
+        breakPages: true,
+        experimental: true,
+        trimXmlDeclaration: true,
+      });
+
+      // Make all rendered pages contentEditable for direct in-place editing
+      const wrapper = docxContainerRef.current.querySelector('.docx-wrapper');
+      if (wrapper) {
+        wrapper.setAttribute('contenteditable', 'true');
+        wrapper.setAttribute('spellcheck', 'false');
       }
+
+      const sections = docxContainerRef.current.querySelectorAll('section.docx');
+      sections.forEach((sec) => {
+        sec.setAttribute('contenteditable', 'true');
+      });
+
+      // Extract initial plain text and update word count
+      const text = docxContainerRef.current.innerText || '';
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      setWordCount(words);
+      onChange(docxContainerRef.current.innerHTML);
     } catch (err) {
-      console.error('Failed to parse uploaded document:', err);
-      alert('Could not parse the file. Please ensure it is a valid .docx or text document.');
+      console.error('Failed to render document with docx-preview:', err);
+    } finally {
+      setIsLoadingDocx(false);
+    }
+  }, [onChange]);
+
+  const hasLoadedInitialRef = useRef(false);
+
+  // Automatically load the sample resume docx on initial mount once
+  useEffect(() => {
+    if (hasLoadedInitialRef.current) return;
+    hasLoadedInitialRef.current = true;
+
+    fetch('/sample-resume.docx')
+      .then((res) => {
+        if (res.ok) return res.arrayBuffer();
+        return null;
+      })
+      .then((buffer) => {
+        if (buffer && docxContainerRef.current) {
+          renderDocx(buffer);
+          if (onFileLoaded) {
+            onFileLoaded('Ajitkumar Subramanyam -  PO June 2nd 2026.docx');
+          }
+        }
+      })
+      .catch((err) => {
+        console.log('No default sample docx found:', err);
+      });
+  }, [renderDocx, onFileLoaded]);
+
+  // Handle user typing and changes inside the contentEditable document
+  const handleContentInput = () => {
+    if (!docxContainerRef.current) return;
+    const text = docxContainerRef.current.innerText || '';
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    setWordCount(words);
+    onChange(docxContainerRef.current.innerHTML);
+  };
+
+  // Selection change listener to detect highlighted text for Humanizer
+  const handleSelectionChange = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      setSelectedText('');
+      setSelectionCoords(null);
+      return;
+    }
+
+    const text = selection.toString().trim();
+    if (text.length > 4) {
+      setSelectedText(text);
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        setSelectionCoords({
+          top: Math.max(10, rect.top - 45),
+          left: rect.left + rect.width / 2,
+        });
+      }
+    } else {
+      setSelectedText('');
+      setSelectionCoords(null);
     }
   };
 
-  const handleExportDocx = async () => {
-    if (!editor) return;
+  // Upload custom .docx file
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
     try {
-      const html = editor.getHTML();
-      const blob = await generateDocxBlob(html, resumeFileName.replace(/\.docx$/i, ''));
-      saveAs(blob, resumeFileName.endsWith('.docx') ? resumeFileName : `${resumeFileName}.docx`);
+      const buffer = await file.arrayBuffer();
+      await renderDocx(buffer);
+      if (onFileLoaded) onFileLoaded(file.name);
+    } catch (err) {
+      console.error('Failed to parse uploaded document:', err);
+      alert('Could not parse the file. Please ensure it is a valid .docx document.');
+    }
+  };
+
+  // Export / Download .docx
+  const handleExportDocx = async () => {
+    try {
+      if (rawBuffer) {
+        // If raw docx buffer exists, save it directly preserving all OpenXML formatting
+        const blob = new Blob([rawBuffer], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        saveAs(blob, resumeFileName.endsWith('.docx') ? resumeFileName : `${resumeFileName}.docx`);
+      } else if (docxContainerRef.current) {
+        const html = docxContainerRef.current.innerHTML;
+        const blob = await generateDocxBlob(html, resumeFileName.replace(/\.docx$/i, ''));
+        saveAs(blob, resumeFileName.endsWith('.docx') ? resumeFileName : `${resumeFileName}.docx`);
+      }
     } catch (err) {
       console.error('Failed to export DOCX:', err);
       alert('Error generating DOCX document. Please try again.');
     }
   };
 
-  const getWordCount = () => {
-    if (!editor) return 0;
-    const text = editor.getText();
-    return text.trim() ? text.trim().split(/\s+/).length : 0;
+  // Formatting commands on the active contentEditable selection
+  const executeCommand = (cmd: string, value: string = '') => {
+    document.execCommand(cmd, false, value);
+    handleContentInput();
   };
-
-  if (!editor) return null;
 
   return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs relative">
       {/* Top File Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-        <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-blue-600" />
-          <span className="text-xs font-bold text-slate-800 truncate max-w-[200px]">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+          <span className="text-xs font-bold text-slate-800 truncate max-w-[220px]">
             {resumeFileName}
           </span>
-          <span className="text-[11px] text-slate-400 font-medium ml-1">
-            ({getWordCount()} words)
+          <span className="text-[11px] text-slate-500 font-medium shrink-0">
+            ({wordCount.toLocaleString()} words)
+          </span>
+          <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+            Word Fidelity
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
-            accept=".docx,.doc,.txt"
+            accept=".docx"
             className="hidden"
           />
-
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg transition-colors shadow-2xs"
-            title="Upload an existing .docx resume"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
           >
             <Upload className="w-3.5 h-3.5 text-slate-500" />
             <span>Upload .docx</span>
           </button>
-
           <button
             type="button"
             onClick={handleExportDocx}
-            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-2xs"
-            title="Export formatted Microsoft Word (.docx) resume"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-2xs"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download .docx</span>
@@ -204,236 +233,182 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
         </div>
       </div>
 
-      {/* MS Word-Grade Document Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 p-2 bg-white border-b border-slate-200 text-slate-700">
-        {/* Headings */}
-        <div className="flex items-center gap-0.5 pr-1 border-r border-slate-200">
+      {/* Formatting & Zoom Toolbar */}
+      <div className="flex items-center justify-between px-2.5 py-1.5 bg-white border-b border-slate-200 overflow-x-auto no-scrollbar shrink-0">
+        <div className="flex items-center gap-1">
+          {/* Headings */}
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('heading', { level: 1 }) ? 'bg-blue-50 text-blue-700 font-bold' : ''
-            }`}
+            onClick={() => executeCommand('formatBlock', '<h1>')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
             title="Heading 1"
           >
             <Heading1 className="w-4 h-4" />
           </button>
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('heading', { level: 2 }) ? 'bg-blue-50 text-blue-700 font-bold' : ''
-            }`}
-            title="Heading 2 (Section Title)"
+            onClick={() => executeCommand('formatBlock', '<h2>')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
+            title="Heading 2"
           >
             <Heading2 className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('heading', { level: 3 }) ? 'bg-blue-50 text-blue-700 font-bold' : ''
-            }`}
-            title="Heading 3 (Role/Company)"
-          >
-            <Heading3 className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Text Styling */}
-        <div className="flex items-center gap-0.5 px-1 border-r border-slate-200">
+          <div className="w-[1px] h-4 bg-slate-200 mx-1" />
+
+          {/* Basic Text Formatting */}
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('bold') ? 'bg-blue-50 text-blue-700 font-bold' : ''
-            }`}
-            title="Bold"
+            onClick={() => executeCommand('bold')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700 font-bold"
+            title="Bold (Ctrl+B)"
           >
             <Bold className="w-4 h-4" />
           </button>
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('italic') ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Italic"
+            onClick={() => executeCommand('italic')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700 italic"
+            title="Italic (Ctrl+I)"
           >
             <Italic className="w-4 h-4" />
           </button>
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('underline') ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Underline"
+            onClick={() => executeCommand('underline')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700 underline"
+            title="Underline (Ctrl+U)"
           >
             <UnderlineIcon className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleStrike().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('strike') ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Strikethrough"
-          >
-            <Strikethrough className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleHighlight({ color: '#fef08a' }).run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('highlight') ? 'bg-amber-100 text-amber-900' : ''
-            }`}
-            title="Highlight Key Skills"
-          >
-            <Highlighter className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Lists & Hierarchy */}
-        <div className="flex items-center gap-0.5 px-1 border-r border-slate-200">
+          <div className="w-[1px] h-4 bg-slate-200 mx-1" />
+
+          {/* Lists */}
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('bulletList') ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Bullet List (Bullet Points)"
+            onClick={() => executeCommand('insertUnorderedList')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
+            title="Bullet List"
           >
             <List className="w-4 h-4" />
           </button>
           <button
             type="button"
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('orderedList') ? 'bg-blue-50 text-blue-700' : ''
-            }`}
+            onClick={() => executeCommand('insertOrderedList')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
             title="Numbered List"
           >
             <ListOrdered className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive('blockquote') ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Blockquote"
-          >
-            <Quote className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* Alignment */}
-        <div className="flex items-center gap-0.5 px-1 border-r border-slate-200">
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().setTextAlign('left').run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive({ textAlign: 'left' }) ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Align Left"
-          >
-            <AlignLeft className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().setTextAlign('center').run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive({ textAlign: 'center' }) ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Align Center (Header / Contact)"
-          >
-            <AlignCenter className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().setTextAlign('right').run()}
-            className={`p-1.5 rounded hover:bg-slate-100 transition-colors ${
-              editor.isActive({ textAlign: 'right' }) ? 'bg-blue-50 text-blue-700' : ''
-            }`}
-            title="Align Right"
-          >
-            <AlignRight className="w-4 h-4" />
-          </button>
-        </div>
+          <div className="w-[1px] h-4 bg-slate-200 mx-1" />
 
-        {/* Table & Structure */}
-        <div className="flex items-center gap-0.5 px-1 border-r border-slate-200">
+          {/* Undo / Redo */}
           <button
             type="button"
-            onClick={() => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()}
-            className="p-1.5 rounded hover:bg-slate-100 transition-colors"
-            title="Insert Multi-column Layout / Table"
-          >
-            <TableIcon className="w-4 h-4" />
-          </button>
-          {editor.isActive('table') && (
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().deleteTable().run()}
-              className="p-1.5 rounded text-rose-600 hover:bg-rose-50 transition-colors"
-              title="Delete Table"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Undo / Redo */}
-        <div className="flex items-center gap-0.5 pl-1 ml-auto">
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
-            className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40 transition-colors"
+            onClick={() => executeCommand('undo')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
             title="Undo (Ctrl+Z)"
           >
             <Undo className="w-4 h-4" />
           </button>
           <button
             type="button"
-            onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
-            className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40 transition-colors"
+            onClick={() => executeCommand('redo')}
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-700"
             title="Redo (Ctrl+Y)"
           >
             <Redo className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Zoom Controls */}
+        <div className="flex items-center gap-1 text-xs text-slate-600 pl-2">
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.1).toFixed(2))))}
+            className="p-1 rounded hover:bg-slate-100 text-slate-600"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <span className="font-semibold w-11 text-center text-[11px]">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.min(1.5, Number((z + 0.1).toFixed(2))))}
+            className="p-1 rounded hover:bg-slate-100 text-slate-600"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(0.85)}
+            className="px-1.5 py-0.5 rounded hover:bg-slate-100 text-[11px] font-medium text-blue-600"
+            title="Fit Width"
+          >
+            <Maximize2 className="w-3 h-3 inline mr-0.5" />
+            Fit
+          </button>
+        </div>
       </div>
 
-      {/* Floating Selection Menu */}
-      {selectedText && selectionCoords && (
+      {/* Floating Selection Menu for Humanizer */}
+      {selectionCoords && selectedText && (
         <div
           style={{
             position: 'fixed',
             top: `${selectionCoords.top}px`,
             left: `${selectionCoords.left}px`,
             transform: 'translateX(-50%)',
-            zIndex: 40,
+            zIndex: 9999,
           }}
-          className="flex items-center gap-1 bg-slate-900 text-white px-2 py-1.5 rounded-lg shadow-xl border border-slate-800 animate-in fade-in zoom-in-95 duration-150"
+          className="bg-slate-900 text-white rounded-lg shadow-xl px-2.5 py-1.5 flex items-center gap-2 text-xs border border-slate-700 animate-in fade-in zoom-in-95 duration-150"
         >
           <button
             type="button"
-            onClick={() => onOpenHumanizerForSelection(selectedText)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold bg-blue-600 hover:bg-blue-500 rounded text-white transition-colors"
+            onClick={() => {
+              onOpenHumanizerForSelection(selectedText);
+              setSelectionCoords(null);
+            }}
+            className="flex items-center gap-1.5 text-amber-300 hover:text-amber-200 font-semibold transition-colors"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            Humanize Selection
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Humanize Selection</span>
           </button>
         </div>
       )}
 
-      {/* Document Canvas Surface */}
-      <div className="flex-1 overflow-y-auto bg-slate-100/70 p-4 md:p-6 flex justify-center">
-        <div className="w-full max-w-[800px] min-h-[700px] bg-white rounded-lg border border-slate-200/90 shadow-md">
-          <EditorContent editor={editor} />
+      {/* High-Fidelity Microsoft Word Document Viewport */}
+      <div
+        className="flex-1 overflow-auto bg-slate-200/70 p-3 flex justify-center items-start relative"
+        onMouseUp={handleSelectionChange}
+        onKeyUp={handleSelectionChange}
+      >
+        {isLoadingDocx && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex flex-col items-center justify-center z-20 text-slate-500">
+            <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mb-2" />
+            <p className="text-sm font-medium">Rendering Microsoft Word Document...</p>
+            <p className="text-xs text-slate-400">Preserving exact layout tables, styles, and typography</p>
+          </div>
+        )}
+
+        <div
+          style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top center',
+            transition: 'transform 0.15s ease-out',
+          }}
+          className="docx-render-stage"
+        >
+          <div
+            ref={docxContainerRef}
+            onInput={handleContentInput}
+            className="docx-editor-root"
+          />
         </div>
       </div>
     </div>

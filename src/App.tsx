@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { JobDescriptionPanel } from './components/JobDescriptionPanel';
 import { DocumentEditor } from './components/DocumentEditor';
@@ -213,7 +213,7 @@ export function App() {
         <section className="lg:col-span-5 h-full overflow-hidden flex flex-col">
           <DocumentEditor
             initialContent={resumeHtml}
-            onChange={(html) => setResumeHtml(html)}
+            onChange={setResumeHtml}
             onOpenHumanizerForSelection={(selectedText) =>
               handleOpenHumanizer(selectedText, 'Highlighted Resume Selection')
             }

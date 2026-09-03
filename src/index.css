@@ -1,52 +1,35 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #334155;
-  --muted: #f8fafc;
-  --muted-foreground: #64748b;
-  --accent: #eff6ff;
-  --accent-foreground: #1d4ed8;
-  --border: #e2e8f0;
-  --ring: #3b82f6;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+@layer base {
+  body {
+    @apply bg-slate-100 text-slate-900 antialiased selection:bg-blue-500 selection:text-white;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  font-family: var(--font-sans);
-  background-color: var(--background);
-  color: var(--foreground);
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Custom modern scrollbars */
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 9999px;
+  border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
 
-/* TipTap Document Editor Styles */
+/* TipTap & Word Editor Styles */
 .ProseMirror {
   outline: none;
-  min-height: 550px;
+  min-height: 100%;
   padding: 2.5rem 3rem;
   line-height: 1.65;
   font-size: 0.95rem;
@@ -58,11 +41,9 @@ body {
 }
 
 .ProseMirror h1 {
-  font-size: 1.75rem;
+  font-size: 1.6rem;
   font-weight: 700;
   color: #0f172a;
-  border-bottom: 2px solid #e2e8f0;
-  padding-bottom: 0.35rem;
   margin-top: 1.25rem;
   margin-bottom: 0.75rem;
   letter-spacing: -0.02em;
@@ -109,35 +90,53 @@ body {
   margin-bottom: 0.75rem;
 }
 
+/* Borderless layout tables for multi-column resumes */
 .ProseMirror table {
   border-collapse: collapse;
   margin: 1rem 0;
   width: 100%;
-  table-layout: fixed;
 }
 
 .ProseMirror td,
 .ProseMirror th {
-  border: 1px solid #cbd5e1;
   padding: 0.5rem 0.75rem;
   vertical-align: top;
 }
 
-.ProseMirror th {
-  background-color: #f1f5f9;
-  font-weight: 600;
+/* High-Fidelity Microsoft Word docx-preview Page Canvas */
+.docx-editor-root .docx-preview-wrapper,
+.docx-preview-wrapper,
+.docx-editor-root .docx-wrapper,
+.docx-wrapper {
+  background: transparent !important;
+  padding: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  min-height: 100% !important;
 }
 
-.ProseMirror mark {
-  background-color: #fef08a;
-  padding: 0.1rem 0.25rem;
-  border-radius: 0.2rem;
+.docx-editor-root .docx-preview-wrapper > section,
+.docx-preview-wrapper > section,
+.docx-editor-root .docx-wrapper > section.docx,
+.docx-wrapper > section.docx {
+  background: #ffffff !important;
+  box-shadow: 0 4px 25px -4px rgba(0, 0, 0, 0.15), 0 2px 8px -2px rgba(0, 0, 0, 0.08) !important;
+  border-radius: 2px !important;
+  margin-bottom: 24px !important;
+  outline: none !important;
+  cursor: text;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.ProseMirror p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  color: #94a3b8;
-  pointer-events: none;
-  height: 0;
+.docx-wrapper > section.docx:focus-within {
+  box-shadow: 0 0 0 2px #3b82f6, 0 8px 30px rgba(0, 0, 0, 0.12) !important;
+}
+
+.docx-wrapper table {
+  box-sizing: border-box;
+}
+
+.docx-wrapper p {
+  word-break: break-word;
 }
