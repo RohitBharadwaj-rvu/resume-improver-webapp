@@ -13,6 +13,10 @@ import {
   DownloadCloud,
   ExternalLink,
   FolderOpen,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { checkGitHubUpdate, type AppUpdateInfo, CURRENT_APP_VERSION } from '../services/updater';
 
@@ -35,6 +39,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle');
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
+
+  const handleCopyKey = () => {
+    if (formData.apiKey) {
+      navigator.clipboard.writeText(formData.apiKey);
+      setCopiedKey(true);
+      setTimeout(() => setCopiedKey(false), 2000);
+    }
+  };
 
   const handleCheckUpdate = async () => {
     setUpdateStatus('checking');
@@ -137,11 +151,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0">
               <Settings className="w-4 h-4" />
             </div>
             <div>
@@ -156,226 +170,257 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Provider Preset Buttons */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Provider Preset
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: 'openai', label: 'OpenAI' },
-                { id: 'openrouter', label: 'OpenRouter' },
-                { id: 'groq', label: 'Groq' },
-                { id: 'ollama', label: 'Ollama (Local)' },
-                { id: 'lmstudio', label: 'LM Studio' },
-                { id: 'custom', label: 'Custom URL' },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => handleProviderSelect(p.id as any)}
-                  className={`px-2 py-1.5 text-xs font-medium rounded-lg border transition-all ${
-                    formData.provider === p.id
-                      ? 'bg-blue-50 border-blue-500 text-blue-700 font-semibold shadow-2xs'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+        {/* Form with scrollable body and pinned footer */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="p-6 space-y-4 overflow-y-auto flex-1 overscroll-contain">
+            {/* Provider Preset Buttons */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Provider Preset
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'openai', label: 'OpenAI' },
+                  { id: 'openrouter', label: 'OpenRouter' },
+                  { id: 'groq', label: 'Groq' },
+                  { id: 'ollama', label: 'Ollama (Local)' },
+                  { id: 'lmstudio', label: 'LM Studio' },
+                  { id: 'custom', label: 'Custom URL' },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleProviderSelect(p.id as LLMConfig['provider'])}
+                    className={`py-2 px-3 text-xs font-medium rounded-lg border text-center transition-all ${
+                      formData.provider === p.id
+                        ? 'border-blue-500 bg-blue-50/70 text-blue-700 ring-1 ring-blue-500 font-semibold'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Base URL */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <Globe className="w-3.5 h-3.5 text-slate-400" />
-              API Base URL
-            </label>
-            <input
-              type="text"
-              value={formData.baseUrl}
-              onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-              placeholder="https://api.openai.com/v1"
-              required
-              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-white"
-            />
-          </div>
+            {/* Base URL */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <Globe className="w-3.5 h-3.5 text-slate-400" />
+                API Base URL
+              </label>
+              <input
+                type="text"
+                value={formData.baseUrl}
+                onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+                placeholder="https://api.openai.com/v1"
+                required
+                className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-white"
+              />
+            </div>
 
-          {/* API Key */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <KeyRound className="w-3.5 h-3.5 text-slate-400" />
-              API Key
-            </label>
-            <input
-              type="password"
-              value={formData.apiKey}
-              onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-              placeholder="sk-..."
-              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-white font-mono"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              Stored locally in your browser. Leave blank for local Ollama / LM Studio.
-            </p>
-          </div>
-
-          {/* Model Name */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <Cpu className="w-3.5 h-3.5 text-slate-400" />
-              Model Name
-            </label>
-            <input
-              type="text"
-              value={formData.model}
-              onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-              placeholder="gpt-4o, llama-3.3-70b-versatile, etc."
-              required
-              className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-white font-mono"
-            />
-          </div>
-
-          {/* Test Connection Button & Status */}
-          <div className="pt-2">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={handleTestConnection}
-                disabled={testStatus === 'testing'}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-              >
-                {testStatus === 'testing' ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Globe className="w-3.5 h-3.5 text-blue-600" />
+            {/* API Key */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                  <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                  API Key
+                </label>
+                {formData.apiKey && (
+                  <button
+                    type="button"
+                    onClick={handleCopyKey}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-1 transition-colors"
+                  >
+                    {copiedKey ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedKey ? 'Copied to clipboard' : 'Copy Key'}</span>
+                  </button>
                 )}
-                <span>Test Connection</span>
-              </button>
-
-              {testStatus === 'success' && (
-                <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
-                  <CheckCircle2 className="w-4 h-4" /> Connected
-                </span>
-              )}
-              {testStatus === 'error' && (
-                <span className="inline-flex items-center gap-1 text-xs text-rose-600 font-medium">
-                  <AlertCircle className="w-4 h-4" /> Connection Failed
-                </span>
-              )}
-            </div>
-
-            {testMessage && (
-              <p className={`text-[11px] mt-1.5 ${testStatus === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
-                {testMessage}
-              </p>
-            )}
-          </div>
-
-          {/* Desktop App & Updates Section */}
-          <div className="pt-3 border-t border-slate-200">
-            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <DownloadCloud className="w-4 h-4 text-blue-600" />
-                  <span className="text-xs font-bold text-slate-800">
-                    Application Version &amp; Updates
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
-                    {CURRENT_APP_VERSION}
-                  </span>
-                  {window.electronAPI && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700">
-                      Desktop App
-                    </span>
-                  )}
-                </div>
-
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={formData.apiKey}
+                  onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                  placeholder="sk-..."
+                  className="w-full text-xs p-2.5 pr-10 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-white font-mono"
+                />
                 <button
                   type="button"
-                  onClick={handleCheckUpdate}
-                  disabled={updateStatus === 'checking'}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors shadow-2xs"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                  title={showApiKey ? 'Hide API key' : 'Show API key'}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${updateStatus === 'checking' ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
-                  <span>{updateStatus === 'checking' ? 'Checking...' : 'Check for Updates'}</span>
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                {window.electronAPI ? 'Encrypted locally on disk via Windows DPAPI.' : 'Stored locally in your browser. Leave blank for local Ollama / LM Studio.'}
+              </p>
+            </div>
 
-              {/* Status Display */}
-              {updateStatus === 'up-to-date' && (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>You're on the latest version ({updateInfo?.latestVersion || CURRENT_APP_VERSION})!</span>
-                </div>
+            {/* Model Name */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                <Cpu className="w-3.5 h-3.5 text-slate-400" />
+                Model Name
+              </label>
+              <input
+                type="text"
+                value={formData.model}
+                onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                placeholder="gpt-4o, llama-3.3-70b-versatile, etc."
+                required
+                className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 bg-white font-mono"
+              />
+            </div>
+
+            {/* Test Connection Button & Status */}
+            <div className="pt-1">
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testStatus === 'testing'}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  {testStatus === 'testing' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Globe className="w-3.5 h-3.5 text-blue-600" />
+                  )}
+                  <span>Test Connection</span>
+                </button>
+
+                {testStatus === 'success' && (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                    <CheckCircle2 className="w-4 h-4" /> Connected
+                  </span>
+                )}
+                {testStatus === 'error' && (
+                  <span className="inline-flex items-center gap-1 text-xs text-rose-600 font-medium">
+                    <AlertCircle className="w-4 h-4" /> Connection Failed
+                  </span>
+                )}
+              </div>
+
+              {testMessage && (
+                <p className={`text-[11px] mt-1.5 ${testStatus === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                  {testMessage}
+                </p>
               )}
+            </div>
 
-              {updateStatus === 'available' && (
-                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-bold text-blue-900">
-                      🎉 New Version Available: {updateInfo?.latestVersion}
-                    </p>
-                    <p className="text-[11px] text-blue-700">
-                      Update now to get the latest features and optimizations.
-                    </p>
+            {/* Application Version & Updates Section */}
+            <div className="pt-2 border-t border-slate-200">
+              <div className="bg-slate-50/90 rounded-xl p-3.5 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                      <DownloadCloud className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-slate-800">Application Updates</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
+                          {CURRENT_APP_VERSION}
+                        </span>
+                        {window.electronAPI && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700">
+                            Desktop App
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        Check GitHub repository for new releases
+                      </p>
+                    </div>
                   </div>
+
                   <button
                     type="button"
-                    onClick={handleOpenReleaseUrl}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors shrink-0"
+                    onClick={handleCheckUpdate}
+                    disabled={updateStatus === 'checking'}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors shrink-0 disabled:opacity-50"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Get Update</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${updateStatus === 'checking' ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+                    <span className="whitespace-nowrap">{updateStatus === 'checking' ? 'Checking...' : 'Check Updates'}</span>
                   </button>
                 </div>
-              )}
 
-              {updateStatus === 'error' && (
-                <div className="flex items-center gap-1.5 text-xs text-rose-600">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{updateError || 'Unable to fetch update info from GitHub.'}</span>
-                </div>
-              )}
+                {/* Status Display */}
+                {updateStatus === 'up-to-date' && (
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700 font-medium">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>You're on the latest version ({updateInfo?.latestVersion || CURRENT_APP_VERSION})!</span>
+                  </div>
+                )}
 
-              {/* Working Directory / Drafts Folder (Electron) */}
-              {window.electronAPI && (
-                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-600">
-                  <span>Resume Working Copies:</span>
-                  <button
-                    type="button"
-                    onClick={handleOpenDraftsFolder}
-                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                    title="Open Documents\Resume ATS Improver\Drafts in Windows File Explorer"
-                  >
-                    <FolderOpen className="w-3.5 h-3.5" />
-                    <span>Open Drafts Folder</span>
-                  </button>
-                </div>
-              )}
+                {updateStatus === 'available' && (
+                  <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-lg flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-blue-900">
+                        🎉 New Version Available: {updateInfo?.latestVersion}
+                      </p>
+                      <p className="text-[11px] text-blue-700 truncate">
+                        Update now for the latest optimizations and ATS updates.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenReleaseUrl}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Get Update</span>
+                    </button>
+                  </div>
+                )}
+
+                {updateStatus === 'error' && (
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    <span className="truncate">{updateError || 'Unable to check GitHub repository.'}</span>
+                  </div>
+                )}
+
+                {/* Working Directory / Drafts Folder (Electron) */}
+                {window.electronAPI && (
+                  <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between text-xs text-slate-600">
+                    <span>Working Resume Copies:</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenDraftsFolder}
+                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                      title="Open Documents\Resume ATS Improver\Drafts in Windows File Explorer"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      <span>Open Drafts Folder</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Modal Actions */}
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200">
+          {/* Pinned Modal Actions Footer */}
+          <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-200 bg-slate-50 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
+              className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200/70 rounded-lg transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs"
+              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
             >
               Save Configuration
             </button>
