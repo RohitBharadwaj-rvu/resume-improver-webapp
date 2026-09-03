@@ -13,43 +13,43 @@ const AI_CLICHES_DATABASE: { phrase: RegExp; reason: string; replacement: string
   },
   {
     phrase: /\btestament to\b/gi,
-    reason: 'Classic ChatGPT rhetorical trope; resumes should state achievements directly.',
-    replacement: 'demonstrating / proven by',
+    reason: 'ChatGPT rhetorical trope; state achievements directly.',
+    replacement: 'demonstrating',
   },
   {
     phrase: /\bdelve(d|s|ing)? into\b/gi,
     reason: 'High-frequency AI tell rarely used in authentic professional engineering contexts.',
-    replacement: 'investigated / analyzed / worked on',
+    replacement: 'analyzed / built',
   },
   {
     phrase: /\bcutting-edge\b/gi,
     reason: 'Generic corporate buzzword. Name the specific technology instead.',
-    replacement: 'modern / cloud-native',
+    replacement: 'modern',
   },
   {
     phrase: /\bmultifaceted\b/gi,
     reason: 'Abstract adjective. Specify the concrete responsibilities.',
-    replacement: 'cross-disciplinary / end-to-end',
+    replacement: 'end-to-end',
   },
   {
     phrase: /\btapestry\b/gi,
-    reason: 'Poetic AI cliché unsuitable for technical documents.',
+    reason: 'Poetic AI cliché unsuitable for professional resumes.',
     replacement: 'suite / ecosystem',
   },
   {
     phrase: /\bleverage(d|s|ing)?\b/gi,
-    reason: 'Jargon-heavy filler. Use direct action verbs like "used", "applied", or "integrated".',
-    replacement: 'used / built with / integrated',
+    reason: 'Jargon-heavy filler. Use direct action verbs like "used", "applied", or "built with".',
+    replacement: 'used / built with',
   },
   {
     phrase: /\bsynergy\b/gi,
     reason: 'Overdone corporate buzzword.',
-    replacement: 'collaboration / alignment',
+    replacement: 'collaboration',
   },
   {
     phrase: /\bbest-in-class\b/gi,
     reason: 'Unsubstantiated superlative. Provide actual performance metrics instead.',
-    replacement: 'high-performance / industry-standard',
+    replacement: 'high-performance',
   },
   {
     phrase: /\bholistic approach\b/gi,
@@ -59,7 +59,7 @@ const AI_CLICHES_DATABASE: { phrase: RegExp; reason: string; replacement: string
   {
     phrase: /\bdriving impactful results\b/gi,
     reason: 'Fluff phrase. State the specific business or technical metric improved.',
-    replacement: 'increasing throughput by [X%] / reducing latency by [Yms]',
+    replacement: 'improving system performance',
   },
 ];
 
@@ -116,7 +116,8 @@ export async function humanizeText(
         };
       }
     } catch (err) {
-      console.warn('LLM Humanizer failed, using rule-based replacement:', err);
+      console.error('LLM Humanizer failed:', err);
+      throw err;
     }
   }
 
@@ -127,11 +128,7 @@ export async function humanizeText(
     humanized = humanized.replace(regex, replacement);
   }
 
-  humanized = humanized
-    .replace(/\s+/g, ' ')
-    .replace(/\bIt is a testament to our commitment to\b/gi, 'Demonstrating proven ability to')
-    .replace(/\bseamlessly orchestrate\b/gi, 'coordinate')
-    .trim();
+  humanized = humanized.replace(/\s+/g, ' ').trim();
 
   return {
     original: text,
@@ -139,8 +136,8 @@ export async function humanizeText(
     aiConfidenceScore,
     detectedCliches,
     explanation: detectedCliches.length > 0
-      ? `Replaced ${detectedCliches.length} AI buzzword(s) with clear, authentic action verbs and active voice.`
-      : 'Text uses clean, natural phrasing.',
+      ? `Replaced ${detectedCliches.length} detected AI cliché(s) with direct action verbs.`
+      : 'Text uses clear, natural phrasing.',
   };
 }
 
@@ -154,7 +151,7 @@ async function callLLMHumanizer(
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const systemPrompt = `You are a professional resume editor specializing in eliminating ChatGPT/AI tells, corporate fluff, and robotic buzzwords.
 Rewrite the provided resume snippet so it sounds 100% natural, active, authentic, and written by an experienced human engineer.
-Do NOT fabricate new achievements. Keep the core meaning, but make it punchy, metric-oriented, and grounded.
+Do NOT fabricate new achievements. Keep the user's authentic facts and make them crisp and active.
 
 Return JSON in this format:
 {
@@ -162,7 +159,7 @@ Return JSON in this format:
   "explanation": "string"
 }`;
 
-  const userPrompt = `ORIGINAL TEXT:\n${text}\n${context ? `\nCONTEXT/TARGET ROLE:\n${context}` : ''}`;
+  const userPrompt = `TEXT TO HUMANIZE:\n${text}\n${context ? `\nCONTEXT / TARGET ROLE:\n${context}` : ''}`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -180,7 +177,10 @@ Return JSON in this format:
     }),
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Humanizer LLM request failed (${response.status}): ${errorText}`);
+  }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content || '';

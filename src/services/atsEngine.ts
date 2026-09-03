@@ -21,7 +21,7 @@ const WEAK_PASSIVE_VERBS = [
 ];
 
 export function extractJobKeywords(jdText: string, resumeText: string = ''): ExtractedKeyword[] {
-  if (!jdText) return [];
+  if (!jdText || !jdText.trim()) return [];
 
   const lowerJD = jdText.toLowerCase();
   const lowerResume = resumeText.toLowerCase();
@@ -43,7 +43,7 @@ export function extractJobKeywords(jdText: string, resumeText: string = ''): Ext
   const lines = jdText.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim().replace(/^[-*•\d.)]\s*/, '');
-    if (trimmed.length > 5 && trimmed.length < 50 && /^[A-Z]/.test(trimmed)) {
+    if (trimmed.length > 3 && trimmed.length < 50 && /^[A-Z]/.test(trimmed)) {
       const cleanKeyword = trimmed.replace(/[:;,.]+$/, '');
       if (
         cleanKeyword.split(' ').length <= 4 &&
@@ -64,7 +64,7 @@ export function extractJobKeywords(jdText: string, resumeText: string = ''): Ext
 }
 
 export function calculateATSScore(resumeText: string, jdText: string): ATSScoreBreakdown {
-  if (!resumeText || !jdText) {
+  if (!resumeText.trim() || !jdText.trim()) {
     return {
       overallScore: 0,
       keywordMatchScore: 0,
@@ -113,18 +113,18 @@ export function calculateATSScore(resumeText: string, jdText: string): ATSScoreB
     }
   }
 
-  let actionVerbScore = Math.min(100, strongVerbsCount * 18);
+  let actionVerbScore = Math.min(100, strongVerbsCount * 20);
   actionVerbScore = Math.max(10, actionVerbScore - weakVerbsFound.length * 15);
 
-  let formattingScore = 50;
-  if (/experience|work history|employment/i.test(resumeText)) formattingScore += 15;
-  if (/education|degree|university/i.test(resumeText)) formattingScore += 15;
+  let formattingScore = 40;
+  if (/experience|work history|employment/i.test(resumeText)) formattingScore += 20;
+  if (/education|degree|university/i.test(resumeText)) formattingScore += 20;
   if (/skills|technologies|technical expertise/i.test(resumeText)) formattingScore += 10;
   if (/summary|profile|about/i.test(resumeText)) formattingScore += 10;
   formattingScore = Math.min(100, formattingScore);
 
   const metricMatches = (resumeText.match(/(\d+%\s*|\$\d+|\d+\+?\s*(years|engineers|users|clients|ms|x|services|projects|teams))/gi) || []).length;
-  let brevityScore = Math.min(100, 40 + metricMatches * 15);
+  let brevityScore = Math.min(100, 30 + metricMatches * 15);
 
   const overallScore = Math.round(
     keywordMatchScore * 0.45 +
@@ -155,6 +155,11 @@ export async function generateOptimizationSuggestions(
   jdText: string,
   llmConfig?: LLMConfig
 ): Promise<Suggestion[]> {
+  if (!resumeText.trim() || !jdText.trim()) {
+    return [];
+  }
+
+  // 1. If LLM API is configured, use LLM exclusively to generate dynamic suggestions
   if (llmConfig && llmConfig.apiKey) {
     try {
       const llmSuggestions = await callLLMSuggestions(resumeText, jdText, llmConfig);
@@ -162,78 +167,46 @@ export async function generateOptimizationSuggestions(
         return llmSuggestions;
       }
     } catch (err) {
-      console.warn('LLM API suggestion call failed, falling back to deterministic engine:', err);
+      console.error('LLM API suggestion call failed:', err);
+      throw err;
     }
   }
 
+  // 2. If no LLM API is configured, dynamically generate suggestions based strictly on detected missing keywords
   const score = calculateATSScore(resumeText, jdText);
   const suggestions: Suggestion[] = [];
 
+  // Missing Keywords suggestions dynamically built from actual missing JD keywords
   if (score.missingKeywords.length > 0) {
-    const topMissing = score.missingKeywords.slice(0, 4);
-    for (const kw of topMissing) {
+    for (const kw of score.missingKeywords.slice(0, 5)) {
       suggestions.push({
-        id: `ats-kw-${kw.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        id: `kw-${kw.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
         category: 'ats_keyword',
-        title: `Integrate Missing Skill: ${kw}`,
-        description: `The Job Description emphasizes "${kw}", but it was not detected in your resume. Incorporate it into your technical skills or project bullet points.`,
+        title: `Add Missing Keyword: ${kw}`,
+        description: `The Job Description requires "${kw}". Incorporate this keyword into your relevant project experience or skills list.`,
         impact: 'high',
         targetSection: 'Skills & Experience',
-        referenceSnippet: `Demonstrated hands-on expertise in ${kw}, applying industry best practices to build robust and scalable systems.`,
+        referenceSnippet: `Applied ${kw} to build and optimize scalable solutions according to project requirements.`,
         status: 'pending',
       });
     }
   }
 
+  // Weak Verbs dynamically detected in the user's resume
   if (score.weakVerbsFound.length > 0) {
     for (const weak of score.weakVerbsFound) {
       suggestions.push({
         id: `verb-${weak.replace(/\s+/g, '-')}`,
         category: 'action_verbs',
-        title: `Upgrade Passive Phrase: "${weak}"`,
-        description: `Replace passive phrases like "${weak}" with high-impact power verbs paired with measurable outcomes.`,
+        title: `Replace Passive Phrase: "${weak}"`,
+        description: `Replace "${weak}" with active action verbs (e.g., Engineered, Optimized, Delivered) and quantify your result.`,
         impact: 'medium',
         targetSection: 'Experience',
-        referenceSnippet: `Architected and implemented core modules, improving reliability by 30% and reducing support tickets.`,
+        referenceSnippet: `Engineered and delivered core features, improving system performance and reliability.`,
         status: 'pending',
       });
     }
-  } else if (score.actionVerbScore < 85) {
-    suggestions.push({
-      id: 'verb-quantify-impact',
-      category: 'action_verbs',
-      title: 'Quantify Achievements with Measurable Metrics',
-      description: 'Strengthen bullet points using the Google X-Y-Z formula: "Accomplished [X], as measured by [Y], by doing [Z]".',
-      impact: 'high',
-      targetSection: 'Experience',
-      referenceSnippet: `Optimized system throughput by 45% by refactoring bottlenecks in database query execution and adding caching.`,
-      status: 'pending',
-    });
   }
-
-  if (score.formattingScore < 90) {
-    suggestions.push({
-      id: 'struct-clarity',
-      category: 'structure_formatting',
-      title: 'Add Clear Section Headers for ATS Parsing',
-      description: 'Ensure standard headers (Professional Experience, Technical Skills, Education, Professional Summary) are prominent.',
-      impact: 'medium',
-      targetSection: 'Header/Structure',
-      referenceSnippet: `## Technical Skills\n- Languages: TypeScript, JavaScript, Python\n- Frameworks: React, Node.js, Express\n- Cloud & DevOps: Docker, AWS, CI/CD`,
-      status: 'pending',
-    });
-  }
-
-  suggestions.push({
-    id: 'brevity-tailored',
-    category: 'brevity_cliche',
-    title: 'Tailor Executive Summary to Job Title',
-    description: 'Align your opening summary with the specific requirements in the job description to immediately hook the recruiter.',
-    impact: 'medium',
-    targetSection: 'Professional Summary',
-    referenceSnippet: `Results-driven Software Engineer with extensive experience in React, TypeScript, and distributed cloud services, proven track record delivering resilient full-stack applications.`,
-    status: 'pending',
-  });
 
   return suggestions;
 }
@@ -244,21 +217,20 @@ async function callLLMSuggestions(
   config: LLMConfig
 ): Promise<Suggestion[]> {
   const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-  const systemPrompt = `You are an elite ATS resume optimization consultant. Analyze the candidate's resume against the Job Description and return a JSON array of actionable suggestions targeting >95% ATS score.
-Every suggestion MUST contain a realistic, tailored "referenceSnippet" that the candidate can adapt with their own authentic history.
+  const systemPrompt = `You are an elite ATS resume optimization consultant. Analyze the candidate's actual resume text against the target Job Description.
+Generate specific, actionable suggestions targeting >95% ATS suitability based strictly on the provided resume and JD.
+For each suggestion, provide:
+- id: unique string
+- category: "ats_keyword" | "action_verbs" | "brevity_cliche" | "structure_formatting" | "grammar_tone"
+- title: concise title
+- description: clear reason why this improves the ATS score
+- impact: "high" | "medium" | "low"
+- targetSection: section where change should be made
+- referenceSnippet: tailored example snippet matching the JD requirements for the user to adapt with their own history.
 
-Return ONLY a JSON array with objects matching:
-{
-  "id": "string",
-  "category": "ats_keyword" | "action_verbs" | "brevity_cliche" | "structure_formatting" | "grammar_tone",
-  "title": "string",
-  "description": "string",
-  "impact": "high" | "medium" | "low",
-  "targetSection": "string",
-  "referenceSnippet": "string"
-}`;
+Return ONLY a valid JSON array of objects.`;
 
-  const userPrompt = `JOB DESCRIPTION:\n${jdText}\n\nCURRENT RESUME:\n${resumeText}\n\nGenerate high-impact ATS improvement suggestions.`;
+  const userPrompt = `JOB DESCRIPTION:\n${jdText}\n\nRESUME:\n${resumeText}\n\nAnalyze and provide ATS optimization suggestions in JSON format.`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -277,7 +249,8 @@ Return ONLY a JSON array with objects matching:
   });
 
   if (!response.ok) {
-    throw new Error(`LLM request failed with status ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`LLM request failed (${response.status}): ${errorText}`);
   }
 
   const data = await response.json();
@@ -286,9 +259,9 @@ Return ONLY a JSON array with objects matching:
   if (jsonMatch) {
     const rawSuggestions = JSON.parse(jsonMatch[0]);
     return rawSuggestions.map((s: any, idx: number) => ({
-      id: s.id || `sugg-llm-${idx}`,
+      id: s.id || `sugg-llm-${idx}-${Date.now()}`,
       category: s.category || 'ats_keyword',
-      title: s.title || 'Resume Optimization',
+      title: s.title || 'Optimization Suggestion',
       description: s.description || '',
       impact: s.impact || 'medium',
       targetSection: s.targetSection || 'Experience',
