@@ -10,6 +10,7 @@ import {
   calculateATSScore,
   extractJobKeywords,
   generateOptimizationSuggestions,
+  evaluateATSWithLLM,
 } from './services/atsEngine';
 import { htmlToPlainText, generateDocxBlob } from './services/docManager';
 import type { ATSScoreBreakdown, ExtractedKeyword, Suggestion, LLMConfig } from './types';
@@ -93,22 +94,37 @@ export function App() {
 
       setIsAnalyzing(true);
       try {
-        const score = calculateATSScore(plainText, jdText);
-        const keywords = extractJobKeywords(jdText, plainText);
+        if (llmConfig && llmConfig.apiKey && jdText.trim() && plainText.trim()) {
+          const result = await evaluateATSWithLLM(plainText, jdText, llmConfig);
+          setAtsBreakdown(result.score);
+          setExtractedKeywords(result.keywords);
+          setSuggestions(result.suggestions);
 
-        setAtsBreakdown(score);
-        setExtractedKeywords(keywords);
-
-        if (isManualRefresh || suggestions.length === 0) {
-          const newSuggestions = await generateOptimizationSuggestions(plainText, jdText, llmConfig);
-          setSuggestions(newSuggestions);
-
-          if (score.overallScore >= 95) {
+          if (result.score.overallScore >= 95) {
             confetti({
               particleCount: 100,
               spread: 70,
               origin: { y: 0.6 },
             });
+          }
+        } else {
+          const score = calculateATSScore(plainText, jdText);
+          const keywords = extractJobKeywords(jdText, plainText);
+
+          setAtsBreakdown(score);
+          setExtractedKeywords(keywords);
+
+          if (isManualRefresh || suggestions.length === 0) {
+            const newSuggestions = await generateOptimizationSuggestions(plainText, jdText, llmConfig);
+            setSuggestions(newSuggestions);
+
+            if (score.overallScore >= 95) {
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 },
+              });
+            }
           }
         }
       } catch (err: any) {
@@ -121,10 +137,15 @@ export function App() {
     [resumeHtml, jdText, llmConfig, suggestions.length]
   );
 
+  // Debounce automatic evaluation when JD or resume text changes
   useEffect(() => {
-    if (resumeHtml.trim() || jdText.trim()) {
+    if (!resumeHtml.trim() || !jdText.trim()) return;
+
+    const timer = setTimeout(() => {
       evaluateResume(false);
-    }
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [resumeHtml, jdText]);
 
   const handleSuggestionStatusChange = (id: string, status: Suggestion['status']) => {
