@@ -1,4 +1,4 @@
-﻿export interface AppUpdateInfo {
+export interface AppUpdateInfo {
   currentVersion: string;
   latestVersion: string;
   hasUpdate: boolean;
@@ -7,7 +7,7 @@
   publishedAt?: string;
 }
 
-export const CURRENT_APP_VERSION = 'v1.0.1';
+export const CURRENT_APP_VERSION = 'v1.0.2';
 
 export function isNewerVersion(latest: string, current: string): boolean {
   const lParts = latest.replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
