@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import type { LLMConfig } from '../types';
 import {
   Settings,
@@ -9,7 +9,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  RefreshCw,
+  DownloadCloud,
+  ExternalLink,
+  FolderOpen,
 } from 'lucide-react';
+import { checkGitHubUpdate, type AppUpdateInfo, CURRENT_APP_VERSION } from '../services/updater';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -27,6 +32,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [formData, setFormData] = useState<LLMConfig>(config);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle');
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  const handleCheckUpdate = async () => {
+    setUpdateStatus('checking');
+    setUpdateError(null);
+    try {
+      const info = await checkGitHubUpdate();
+      setUpdateInfo(info);
+      if (info.hasUpdate) {
+        setUpdateStatus('available');
+      } else {
+        setUpdateStatus('up-to-date');
+      }
+    } catch (err: any) {
+      setUpdateStatus('error');
+      setUpdateError(err.message || 'Unable to check for updates.');
+    }
+  };
+
+  const handleOpenReleaseUrl = () => {
+    const url = updateInfo?.releaseUrl || 'https://github.com/RohitBharadwaj-rvu/resume-improver-webapp/releases';
+    if (window.electronAPI?.openExternalUrl) {
+      window.electronAPI.openExternalUrl(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
+  const handleOpenDraftsFolder = async () => {
+    if (window.electronAPI?.openDraftsFolder) {
+      await window.electronAPI.openDraftsFolder();
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -238,6 +278,90 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {testMessage}
               </p>
             )}
+          </div>
+
+          {/* Desktop App & Updates Section */}
+          <div className="pt-3 border-t border-slate-200">
+            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DownloadCloud className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs font-bold text-slate-800">
+                    Application Version &amp; Updates
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800">
+                    {CURRENT_APP_VERSION}
+                  </span>
+                  {window.electronAPI && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700">
+                      Desktop App
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCheckUpdate}
+                  disabled={updateStatus === 'checking'}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors shadow-2xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${updateStatus === 'checking' ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+                  <span>{updateStatus === 'checking' ? 'Checking...' : 'Check for Updates'}</span>
+                </button>
+              </div>
+
+              {/* Status Display */}
+              {updateStatus === 'up-to-date' && (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>You're on the latest version ({updateInfo?.latestVersion || CURRENT_APP_VERSION})!</span>
+                </div>
+              )}
+
+              {updateStatus === 'available' && (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-bold text-blue-900">
+                      🎉 New Version Available: {updateInfo?.latestVersion}
+                    </p>
+                    <p className="text-[11px] text-blue-700">
+                      Update now to get the latest features and optimizations.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenReleaseUrl}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors shrink-0"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Get Update</span>
+                  </button>
+                </div>
+              )}
+
+              {updateStatus === 'error' && (
+                <div className="flex items-center gap-1.5 text-xs text-rose-600">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{updateError || 'Unable to fetch update info from GitHub.'}</span>
+                </div>
+              )}
+
+              {/* Working Directory / Drafts Folder (Electron) */}
+              {window.electronAPI && (
+                <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-600">
+                  <span>Resume Working Copies:</span>
+                  <button
+                    type="button"
+                    onClick={handleOpenDraftsFolder}
+                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                    title="Open Documents\Resume ATS Improver\Drafts in Windows File Explorer"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    <span>Open Drafts Folder</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Modal Actions */}

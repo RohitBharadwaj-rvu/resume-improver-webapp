@@ -1,4 +1,4 @@
-﻿const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readDocxFile: (targetPath) => ipcRenderer.invoke('fs:readFile', targetPath),
   getSecureKey: (key) => ipcRenderer.invoke('storage:getSecureKey', key),
   setSecureKey: (key, value) => ipcRenderer.invoke('storage:setSecureKey', key, value),
+  createWorkingCopy: (originalFileName, bufferData) => ipcRenderer.invoke('drafts:createWorkingCopy', originalFileName, bufferData),
+  openDraftsFolder: () => ipcRenderer.invoke('drafts:openFolder'),
+  openExternalUrl: (url) => ipcRenderer.invoke('app:openExternalUrl', url),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),

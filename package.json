@@ -1,7 +1,7 @@
 {
   "name": "resume-improver-webapp",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-Powered Resume ATS Optimization & Word Formatting Editor",
   "author": "Rohit Bharadwaj",
   "type": "module",

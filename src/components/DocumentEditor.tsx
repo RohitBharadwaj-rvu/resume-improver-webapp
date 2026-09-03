@@ -21,6 +21,8 @@ import {
   Maximize2,
   RefreshCw,
   Save,
+  FolderOpen,
+  FolderDown,
 } from 'lucide-react';
 
 interface DocumentEditorProps {
@@ -32,6 +34,8 @@ interface DocumentEditorProps {
   onRegisterInsertSnippet?: (inserter: (snippet: string, targetSection?: string) => boolean) => void;
   currentFilePath?: string | null;
   onSaveDirect?: () => void;
+  onSaveAs?: () => void;
+  isWorkingCopy?: boolean;
 }
 
 export const DocumentEditor: React.FC<DocumentEditorProps> = ({
@@ -42,6 +46,8 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   onRegisterInsertSnippet,
   currentFilePath,
   onSaveDirect,
+  onSaveAs,
+  isWorkingCopy,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docxContainerRef = useRef<HTMLDivElement>(null);
@@ -103,11 +109,20 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
         if (res.ok) return res.arrayBuffer();
         return null;
       })
-      .then((buffer) => {
+      .then(async (buffer) => {
         if (buffer && docxContainerRef.current) {
           renderDocx(buffer);
+          const defaultName = 'Ajitkumar Subramanyam -  PO June 2nd 2026.docx';
+          if (window.electronAPI?.createWorkingCopy) {
+            const bytes = Array.from(new Uint8Array(buffer));
+            const draftRes = await window.electronAPI.createWorkingCopy(defaultName, bytes);
+            if (draftRes.success && draftRes.filePath) {
+              if (onFileLoaded) onFileLoaded(draftRes.fileName || defaultName, draftRes.filePath);
+              return;
+            }
+          }
           if (onFileLoaded) {
-            onFileLoaded('Ajitkumar Subramanyam -  PO June 2nd 2026.docx');
+            onFileLoaded(defaultName);
           }
         }
       })
@@ -263,6 +278,13 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
       if (result) {
         const uint8 = new Uint8Array(result.data);
         await renderDocx(uint8.buffer);
+        if (window.electronAPI?.createWorkingCopy) {
+          const draftRes = await window.electronAPI.createWorkingCopy(result.fileName, result.data);
+          if (draftRes.success && draftRes.filePath) {
+            if (onFileLoaded) onFileLoaded(draftRes.fileName || result.fileName, draftRes.filePath);
+            return;
+          }
+        }
         if (onFileLoaded) onFileLoaded(result.fileName, result.filePath);
       }
     } else {
@@ -277,6 +299,14 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     try {
       const buffer = await file.arrayBuffer();
       await renderDocx(buffer);
+      if (window.electronAPI?.createWorkingCopy) {
+        const bytes = Array.from(new Uint8Array(buffer));
+        const draftRes = await window.electronAPI.createWorkingCopy(file.name, bytes);
+        if (draftRes.success && draftRes.filePath) {
+          if (onFileLoaded) onFileLoaded(draftRes.fileName || file.name, draftRes.filePath);
+          return;
+        }
+      }
       const filePath = (file as any).path || undefined;
       if (onFileLoaded) onFileLoaded(file.name, filePath);
     } catch (err) {
@@ -309,6 +339,14 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     try {
       const buffer = await file.arrayBuffer();
       await renderDocx(buffer);
+      if (window.electronAPI?.createWorkingCopy) {
+        const bytes = Array.from(new Uint8Array(buffer));
+        const draftRes = await window.electronAPI.createWorkingCopy(file.name, bytes);
+        if (draftRes.success && draftRes.filePath) {
+          if (onFileLoaded) onFileLoaded(draftRes.fileName || file.name, draftRes.filePath);
+          return;
+        }
+      }
       const filePath = (file as any).path || undefined;
       if (onFileLoaded) onFileLoaded(file.name, filePath);
     } catch (err) {
@@ -371,12 +409,31 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
           <span className="text-[11px] text-slate-500 font-medium shrink-0">
             ({wordCount.toLocaleString()} words)
           </span>
+          {isWorkingCopy && (
+            <span
+              className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800"
+              title="Working copy in Documents\Resume ATS Improver\Drafts. Original resume remains safe."
+            >
+              Working Copy
+            </span>
+          )}
           <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
             Word Fidelity
           </span>
+          {window.electronAPI && (
+            <button
+              type="button"
+              onClick={() => window.electronAPI?.openDraftsFolder?.()}
+              className="hidden lg:inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-blue-600 hover:underline ml-1"
+              title="Open Documents\Resume ATS Improver\Drafts in Windows File Explorer"
+            >
+              <FolderOpen className="w-3 h-3 text-slate-400" />
+              <span>Drafts Folder</span>
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <input
             type="file"
             ref={fileInputRef}
@@ -399,12 +456,22 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
               type="button"
               onClick={onSaveDirect}
               className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition-colors shadow-2xs"
-              title="Save changes directly to disk (Ctrl + S)"
+              title="Save changes to working copy on disk (Ctrl + S)"
             >
               <Save className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Save (Ctrl+S)</span>
+              <span>Save</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={onSaveAs || handleExportDocx}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors shadow-2xs"
+            title="Save copy to any custom folder on your computer (Ctrl + Shift + S)"
+          >
+            <FolderDown className="w-3.5 h-3.5 text-slate-500" />
+            <span>Save As...</span>
+          </button>
 
           <button
             type="button"
@@ -412,7 +479,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-2xs"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download .docx</span>
+            <span>Export</span>
           </button>
         </div>
       </div>

@@ -238,7 +238,7 @@ export function App() {
         if (currentFilePath) {
           const res = await window.electronAPI.saveDocxDirect(currentFilePath, bytes);
           if (res.success) {
-            setSaveToast(`Saved directly to ${resumeFileName}`);
+            setSaveToast(`Saved to working copy: ${resumeFileName}`);
             setTimeout(() => setSaveToast(null), 3000);
             return;
           }
@@ -258,20 +258,46 @@ export function App() {
     }
   }, [resumeHtml, currentFilePath, resumeFileName]);
 
-  // Global Ctrl + S / Cmd + S desktop shortcut listener
+  const handleSaveAsDocx = useCallback(async () => {
+    try {
+      const blob = await generateDocxBlob(resumeHtml || '<p>Resume</p>', resumeFileName.replace(/\.docx$/i, ''));
+      const buffer = await blob.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+
+      if (window.electronAPI) {
+        const res = await window.electronAPI.saveDocxDialog(bytes, resumeFileName);
+        if (res.success && res.filePath) {
+          setCurrentFilePath(res.filePath);
+          if (res.fileName) setResumeFileName(res.fileName);
+          setSaveToast(`Saved As: ${res.fileName || resumeFileName}`);
+          setTimeout(() => setSaveToast(null), 3000);
+        }
+      } else {
+        saveAs(blob, resumeFileName.endsWith('.docx') ? resumeFileName : `${resumeFileName}.docx`);
+      }
+    } catch (err) {
+      console.error('Save As failed:', err);
+    }
+  }, [resumeHtml, resumeFileName]);
+
+  // Global Ctrl + S (Save) / Ctrl + Shift + S (Save As) desktop shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        handleSaveDocx();
+        if (e.shiftKey) {
+          handleSaveAsDocx();
+        } else {
+          handleSaveDocx();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSaveDocx]);
+  }, [handleSaveDocx, handleSaveAsDocx]);
 
   const handleExportDocx = async () => {
-    await handleSaveDocx();
+    await handleSaveAsDocx();
   };
 
   const handleSaveSettings = (newConfig: LLMConfig) => {
@@ -344,6 +370,8 @@ export function App() {
             resumeFileName={resumeFileName}
             currentFilePath={currentFilePath}
             onSaveDirect={handleSaveDocx}
+            onSaveAs={handleSaveAsDocx}
+            isWorkingCopy={Boolean(currentFilePath && currentFilePath.includes('Drafts'))}
             onFileLoaded={(name, path) => {
               setResumeFileName(name);
               if (path) setCurrentFilePath(path);

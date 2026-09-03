@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -135,6 +135,60 @@ ipcMain.handle('fs:readFile', async (event, targetPath) => {
       fileName: path.basename(targetPath),
       data: Array.from(fileBuffer),
     };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Drafts Working Directory in User Documents (e.g. C:\Users\<name>\Documents\Resume ATS Improver\Drafts)
+function getDraftsDirectory() {
+  const docs = app.getPath('documents');
+  const draftsDir = path.join(docs, 'Resume ATS Improver', 'Drafts');
+  if (!fs.existsSync(draftsDir)) {
+    fs.mkdirSync(draftsDir, { recursive: true });
+  }
+  return draftsDir;
+}
+
+ipcMain.handle('drafts:createWorkingCopy', async (event, originalFileName, bufferData) => {
+  try {
+    const draftsDir = getDraftsDirectory();
+    const cleanBase = (originalFileName || 'Resume').replace(/\.docx$/i, '').replace(/_WorkingCopy.*$/i, '');
+    const draftFileName = `${cleanBase}_WorkingCopy.docx`;
+    const draftPath = path.join(draftsDir, draftFileName);
+
+    const buffer = Buffer.from(bufferData);
+    await fs.promises.writeFile(draftPath, buffer);
+
+    return {
+      success: true,
+      filePath: draftPath,
+      fileName: draftFileName,
+      draftsFolder: draftsDir,
+    };
+  } catch (err) {
+    console.error('Error creating working copy:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('drafts:openFolder', async () => {
+  try {
+    const draftsDir = getDraftsDirectory();
+    await shell.openPath(draftsDir);
+    return { success: true, path: draftsDir };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('app:openExternalUrl', async (event, url) => {
+  try {
+    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+      await shell.openExternal(url);
+      return { success: true };
+    }
+    return { success: false, error: 'Invalid URL' };
   } catch (err) {
     return { success: false, error: err.message };
   }
