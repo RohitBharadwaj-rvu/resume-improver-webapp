@@ -95,17 +95,29 @@ export function App() {
       setIsAnalyzing(true);
       try {
         if (llmConfig && llmConfig.apiKey && jdText.trim() && plainText.trim()) {
-          const result = await evaluateATSWithLLM(plainText, jdText, llmConfig);
-          setAtsBreakdown(result.score);
-          setExtractedKeywords(result.keywords);
-          setSuggestions(result.suggestions);
+          try {
+            const result = await evaluateATSWithLLM(plainText, jdText, llmConfig);
+            setAtsBreakdown(result.score);
+            setExtractedKeywords(result.keywords);
+            setSuggestions(result.suggestions);
 
-          if (result.score.overallScore >= 95) {
-            confetti({
-              particleCount: 100,
-              spread: 70,
-              origin: { y: 0.6 },
-            });
+            if (result.score.overallScore >= 95) {
+              confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 },
+              });
+            }
+          } catch (llmErr: any) {
+            console.warn('LLM ATS evaluation failed, falling back to local engine:', llmErr);
+            const score = calculateATSScore(plainText, jdText);
+            const keywords = extractJobKeywords(jdText, plainText);
+            const localSuggestions = await generateOptimizationSuggestions(plainText, jdText);
+
+            setAtsBreakdown(score);
+            setExtractedKeywords(keywords);
+            setSuggestions(localSuggestions);
+            setAnalysisError(`LLM call failed (${llmErr.message}). Evaluated using local ATS engine.`);
           }
         } else {
           const score = calculateATSScore(plainText, jdText);
@@ -129,7 +141,11 @@ export function App() {
         }
       } catch (err: any) {
         console.error('Error analyzing resume:', err);
-        setAnalysisError(err.message || 'Failed to generate suggestions. Please check your API settings.');
+        const score = calculateATSScore(plainText, jdText);
+        const keywords = extractJobKeywords(jdText, plainText);
+        setAtsBreakdown(score);
+        setExtractedKeywords(keywords);
+        setAnalysisError(err.message || 'Evaluated using local ATS engine.');
       } finally {
         setIsAnalyzing(false);
       }

@@ -303,6 +303,68 @@ export function calculateATSScore(resumeText: string, jdText: string): ATSScoreB
   };
 }
 
+export function extractJsonFromText(text: string): any {
+  if (!text) return null;
+
+  // 1. Try markdown code blocks first
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch (e) {
+      // Fall through to brace counter
+    }
+  }
+
+  // 2. Balanced bracket/brace counter
+  const firstBrace = text.search(/[\{\[]/);
+  if (firstBrace === -1) return null;
+
+  const openChar = text[firstBrace];
+  const closeChar = openChar === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = firstBrace; i < text.length; i++) {
+    const char = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === openChar) depth++;
+      else if (char === closeChar) {
+        depth--;
+        if (depth === 0) {
+          const jsonSub = text.slice(firstBrace, i + 1);
+          try {
+            return JSON.parse(jsonSub);
+          } catch (err) {
+            // Remove trailing commas if any
+            const cleaned = jsonSub.replace(/,\s*([\}\]])/g, '$1');
+            try {
+              return JSON.parse(cleaned);
+            } catch (e2) {
+              return null;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 // Full LLM-driven ATS evaluation: keywords extraction, semantic resume matching, scoring, and targeted suggestions
 export async function evaluateATSWithLLM(
   resumeText: string,
@@ -380,16 +442,7 @@ Return ONLY a valid JSON object matching this exact schema:
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content || '';
-  let parsed: any = null;
-
-  const jsonArrMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-  const jsonObjMatch = content.match(/\{[\s\S]*\}/);
-
-  if (jsonArrMatch) {
-    parsed = JSON.parse(jsonArrMatch[0]);
-  } else if (jsonObjMatch) {
-    parsed = JSON.parse(jsonObjMatch[0]);
-  }
+  const parsed = extractJsonFromText(content);
 
   if (parsed) {
     const rawSuggestions = Array.isArray(parsed) ? parsed : (parsed.suggestions || []);
