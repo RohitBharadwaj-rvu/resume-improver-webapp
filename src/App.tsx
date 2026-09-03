@@ -6,6 +6,7 @@ import { CompactATSHeader } from './components/CompactATSHeader';
 import { SuggestionTabs } from './components/SuggestionTabs';
 import { HumanizerModal } from './components/HumanizerModal';
 import { SettingsModal } from './components/SettingsModal';
+import { SuggestionDiscussModal } from './components/SuggestionDiscussModal';
 import {
   calculateATSScore,
   extractJobKeywords,
@@ -48,6 +49,8 @@ export function App() {
   const [isHumanizerOpen, setIsHumanizerOpen] = useState(false);
   const [humanizerInitialText, setHumanizerInitialText] = useState('');
   const [humanizerContextTitle, setHumanizerContextTitle] = useState('');
+  const [discussingSuggestion, setDiscussingSuggestion] = useState<Suggestion | null>(null);
+  const [isDiscussOpen, setIsDiscussOpen] = useState(false);
 
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(() => {
     const saved = localStorage.getItem('resume_improver_llm_config');
@@ -184,6 +187,34 @@ export function App() {
     }
   };
 
+  const handleOpenDiscuss = (suggestion: Suggestion) => {
+    setDiscussingSuggestion(suggestion);
+    setIsDiscussOpen(true);
+  };
+
+  const handleApplyAdaptedSnippet = (
+    suggestionId: string,
+    updatedSnippet: string,
+    insertDirectly: boolean
+  ) => {
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.id === suggestionId
+          ? {
+              ...s,
+              referenceSnippet: updatedSnippet,
+              status: insertDirectly ? 'accepted' : s.status,
+            }
+          : s
+      )
+    );
+
+    if (insertDirectly && insertSnippetRef.current) {
+      const targetSec = discussingSuggestion?.targetSection || 'Experience';
+      insertSnippetRef.current(updatedSnippet, targetSec);
+    }
+  };
+
   const handleExportDocx = async () => {
     try {
       const blob = await generateDocxBlob(resumeHtml || '<p>Resume</p>', resumeFileName.replace(/\.docx$/i, ''));
@@ -278,10 +309,22 @@ export function App() {
               onStatusChange={handleSuggestionStatusChange}
               onOpenHumanizer={(snippet, title) => handleOpenHumanizer(snippet, title)}
               onInsertIntoEditor={handleInsertHumanizedText}
+              onOpenDiscuss={handleOpenDiscuss}
             />
           </div>
         </section>
       </main>
+
+      {/* Interactive Suggestion Discussion & Adaptation Modal */}
+      <SuggestionDiscussModal
+        isOpen={isDiscussOpen}
+        onClose={() => setIsDiscussOpen(false)}
+        suggestion={discussingSuggestion}
+        jdText={jdText}
+        resumeText={resumeHtml}
+        llmConfig={llmConfig}
+        onApplyAdaptedSnippet={handleApplyAdaptedSnippet}
+      />
 
       {/* Humanizer & AI Tone Detection Modal */}
       <HumanizerModal

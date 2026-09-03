@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Suggestion } from '../types';
 import {
   Copy,
@@ -9,6 +9,7 @@ import {
   X,
   RotateCcw,
   Tag,
+  MessageSquare,
 } from 'lucide-react';
 
 interface SuggestionCardProps {
@@ -16,6 +17,7 @@ interface SuggestionCardProps {
   onStatusChange: (id: string, status: Suggestion['status']) => void;
   onOpenHumanizer: (snippet: string, context: string) => void;
   onInsertIntoEditor?: (text: string) => void;
+  onOpenDiscuss?: (suggestion: Suggestion) => void;
 }
 
 export const SuggestionCard: React.FC<SuggestionCardProps> = ({
@@ -23,10 +25,15 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
   onStatusChange,
   onOpenHumanizer,
   onInsertIntoEditor,
+  onOpenDiscuss,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isEditingPartial, setIsEditingPartial] = useState(false);
   const [adaptedSnippet, setAdaptedSnippet] = useState(suggestion.referenceSnippet);
+
+  useEffect(() => {
+    setAdaptedSnippet(suggestion.referenceSnippet);
+  }, [suggestion.referenceSnippet]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(isEditingPartial ? adaptedSnippet : suggestion.referenceSnippet);
@@ -183,6 +190,16 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
 
             <button
               type="button"
+              onClick={() => onOpenDiscuss && onOpenDiscuss(suggestion)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded-lg transition-colors border border-blue-200 shadow-2xs"
+              title="Discuss this suggestion with AI Agent"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Discuss
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsEditingPartial(!isEditingPartial)}
               className="inline-flex items-center gap-1 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg transition-colors"
               title="Edit & adapt snippet with your experience before applying"
@@ -219,14 +236,24 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
               )}
             </span>
 
-            <button
-              type="button"
-              onClick={() => onStatusChange(suggestion.id, 'pending')}
-              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-            >
-              <RotateCcw className="w-3 h-3" />
-              Reopen
-            </button>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => onOpenDiscuss && onOpenDiscuss(suggestion)}
+                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                <MessageSquare className="w-3 h-3" />
+                Discuss
+              </button>
+              <button
+                type="button"
+                onClick={() => onStatusChange(suggestion.id, 'pending')}
+                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 hover:underline"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Reopen
+              </button>
+            </div>
           </div>
         )}
       </div>

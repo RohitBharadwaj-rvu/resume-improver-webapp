@@ -88,4 +88,20 @@ describe('SuggestionCard', () => {
       mockSuggestion.title
     );
   });
+
+  it('triggers onOpenDiscuss when Discuss button is clicked', () => {
+    const handleDiscuss = vi.fn();
+    render(
+      <SuggestionCard
+        suggestion={mockSuggestion}
+        onStatusChange={vi.fn()}
+        onOpenHumanizer={vi.fn()}
+        onOpenDiscuss={handleDiscuss}
+      />
+    );
+
+    const discussBtn = screen.getByRole('button', { name: /discuss/i });
+    fireEvent.click(discussBtn);
+    expect(handleDiscuss).toHaveBeenCalledWith(mockSuggestion);
+  });
 });

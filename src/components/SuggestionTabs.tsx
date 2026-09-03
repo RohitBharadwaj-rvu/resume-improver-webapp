@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import type { Suggestion } from '../types';
 import { SuggestionCard } from './SuggestionCard';
 import { ListFilter, CheckCircle2, Clock, Ban, Sparkles } from 'lucide-react';
@@ -8,6 +8,7 @@ interface SuggestionTabsProps {
   onStatusChange: (id: string, status: Suggestion['status']) => void;
   onOpenHumanizer: (snippet: string, context: string) => void;
   onInsertIntoEditor?: (text: string) => void;
+  onOpenDiscuss?: (suggestion: Suggestion) => void;
 }
 
 export const SuggestionTabs: React.FC<SuggestionTabsProps> = ({
@@ -15,6 +16,7 @@ export const SuggestionTabs: React.FC<SuggestionTabsProps> = ({
   onStatusChange,
   onOpenHumanizer,
   onInsertIntoEditor,
+  onOpenDiscuss,
 }) => {
   const [activeTab, setActiveTab] = useState<'pending' | 'accepted' | 'ignored'>('pending');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -133,6 +135,7 @@ export const SuggestionTabs: React.FC<SuggestionTabsProps> = ({
               onStatusChange={onStatusChange}
               onOpenHumanizer={onOpenHumanizer}
               onInsertIntoEditor={onInsertIntoEditor}
+              onOpenDiscuss={onOpenDiscuss}
             />
           ))
         ) : (
