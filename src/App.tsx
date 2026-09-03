@@ -18,6 +18,12 @@ import type { ATSScoreBreakdown, ExtractedKeyword, Suggestion, LLMConfig } from 
 import confetti from 'canvas-confetti';
 import saveAs from 'file-saver';
 import { Trophy, AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  saveSessionToLocalStorage,
+  loadSessionFromLocalStorage,
+  clearSessionFromLocalStorage,
+  type SessionSnapshot,
+} from './services/sessionStore';
 
 export function App() {
   const [resumeHtml, setResumeHtml] = useState('');
@@ -312,6 +318,49 @@ export function App() {
     }, 100);
   };
 
+  // Check and restore saved session after in-app update
+  useEffect(() => {
+    const restoreSession = async () => {
+      let snapshot: SessionSnapshot | null = null;
+      if (window.electronAPI?.loadSessionSnapshot) {
+        snapshot = await window.electronAPI.loadSessionSnapshot();
+      }
+      if (!snapshot) {
+        snapshot = loadSessionFromLocalStorage();
+        if (snapshot) clearSessionFromLocalStorage();
+      }
+
+      if (snapshot && snapshot.resumeHtml) {
+        setResumeHtml(snapshot.resumeHtml);
+        if (snapshot.resumeFileName) setResumeFileName(snapshot.resumeFileName);
+        if (snapshot.currentFilePath) setCurrentFilePath(snapshot.currentFilePath);
+        if (snapshot.jobDescription) setJdText(snapshot.jobDescription);
+        if (snapshot.atsBreakdown) setAtsBreakdown(snapshot.atsBreakdown);
+        if (snapshot.suggestions) setSuggestions(snapshot.suggestions);
+        if (snapshot.llmConfig) setLlmConfig(snapshot.llmConfig);
+
+        setSaveToast('🎉 Session restored after update!');
+        setTimeout(() => setSaveToast(null), 4000);
+      }
+    };
+    restoreSession();
+  }, []);
+
+  const handleGetSessionSnapshot = useCallback((): SessionSnapshot => {
+    const snapshot: SessionSnapshot = {
+      resumeHtml,
+      resumeFileName,
+      currentFilePath,
+      jobDescription: jdText,
+      atsBreakdown,
+      suggestions,
+      llmConfig,
+      savedAt: Date.now(),
+    };
+    saveSessionToLocalStorage(snapshot);
+    return snapshot;
+  }, [resumeHtml, resumeFileName, currentFilePath, jdText, atsBreakdown, suggestions, llmConfig]);
+
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-100 text-slate-900 font-sans overflow-hidden">
       {/* Top Header & Navigation */}
@@ -427,6 +476,7 @@ export function App() {
         onClose={() => setIsSettingsOpen(false)}
         config={llmConfig}
         onSave={handleSaveSettings}
+        onGetSessionSnapshot={handleGetSessionSnapshot}
       />
 
       {/* Native Desktop Direct Save Toast */}

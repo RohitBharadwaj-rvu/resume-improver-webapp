@@ -25,6 +25,7 @@ interface SettingsModalProps {
   onClose: () => void;
   config: LLMConfig;
   onSave: (config: LLMConfig) => void;
+  onGetSessionSnapshot?: () => any;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -32,6 +33,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   config,
   onSave,
+  onGetSessionSnapshot,
 }) => {
   const [formData, setFormData] = useState<LLMConfig>(config);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -41,6 +43,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
+  const [updateProgressText, setUpdateProgressText] = useState('');
+  const [updatePercent, setUpdatePercent] = useState(0);
 
   const handleCopyKey = () => {
     if (formData.apiKey) {
@@ -64,6 +69,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } catch (err: any) {
       setUpdateStatus('error');
       setUpdateError(err.message || 'Unable to check for updates.');
+    }
+  };
+
+  const handlePerformUpdate = async () => {
+    if (!updateInfo) return;
+    if (!window.electronAPI?.installUpdateAndRestart) {
+      handleOpenReleaseUrl();
+      return;
+    }
+
+    setIsApplyingUpdate(true);
+    setUpdatePercent(0);
+    setUpdateProgressText('Saving current session and preparing update...');
+
+    const snapshot = onGetSessionSnapshot ? onGetSessionSnapshot() : null;
+
+    let cleanupListener: (() => void) | null = null;
+    if (window.electronAPI?.onUpdateProgress) {
+      cleanupListener = window.electronAPI.onUpdateProgress((data) => {
+        setUpdatePercent(data.percent || 0);
+        if (data.status === 'extracting') {
+          setUpdateProgressText('Extracting update files and restarting application...');
+        } else if (data.receivedMB && data.totalMB) {
+          setUpdateProgressText(`Downloading update: ${data.percent}% (${data.receivedMB} MB / ${data.totalMB} MB)...`);
+        } else {
+          setUpdateProgressText(`Downloading update: ${data.percent}%...`);
+        }
+      });
+    }
+
+    try {
+      const result = await window.electronAPI.installUpdateAndRestart(updateInfo.downloadUrl, snapshot);
+      if (!result.success) {
+        throw new Error(result.error || 'Update installation failed.');
+      }
+    } catch (err: any) {
+      setIsApplyingUpdate(false);
+      if (cleanupListener) cleanupListener();
+      setUpdateStatus('error');
+      setUpdateError(err.message || 'Failed to apply update.');
     }
   };
 
@@ -363,23 +408,55 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
 
                 {updateStatus === 'available' && (
-                  <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-lg flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-blue-900">
-                        🎉 New Version Available: {updateInfo?.latestVersion}
-                      </p>
-                      <p className="text-[11px] text-blue-700 truncate">
-                        Update now for the latest optimizations and ATS updates.
-                      </p>
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                          <span>🎉</span>
+                          <span>New Version Available: {updateInfo?.latestVersion}</span>
+                        </p>
+                        <p className="text-[11px] text-blue-700 truncate">
+                          {window.electronAPI
+                            ? 'One-click update will restart into the new version and preserve your active session.'
+                            : 'Update now for the latest optimizations and ATS updates.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handlePerformUpdate}
+                        disabled={isApplyingUpdate}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg shadow-xs transition-colors shrink-0 disabled:opacity-60"
+                      >
+                        {isApplyingUpdate ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : window.electronAPI ? (
+                          <DownloadCloud className="w-3.5 h-3.5" />
+                        ) : (
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        )}
+                        <span>
+                          {isApplyingUpdate
+                            ? 'Updating...'
+                            : window.electronAPI
+                            ? 'Update & Restart'
+                            : 'Get Update'}
+                        </span>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleOpenReleaseUrl}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors shrink-0"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Get Update</span>
-                    </button>
+
+                    {isApplyingUpdate && (
+                      <div className="space-y-1.5 pt-1">
+                        <div className="w-full bg-blue-200/60 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.max(5, updatePercent)}%` }}
+                          />
+                        </div>
+                        <p className="text-[11px] text-blue-800 font-medium">
+                          {updateProgressText}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

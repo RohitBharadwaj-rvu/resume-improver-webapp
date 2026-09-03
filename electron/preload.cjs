@@ -11,6 +11,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createWorkingCopy: (originalFileName, bufferData) => ipcRenderer.invoke('drafts:createWorkingCopy', originalFileName, bufferData),
   openDraftsFolder: () => ipcRenderer.invoke('drafts:openFolder'),
   openExternalUrl: (url) => ipcRenderer.invoke('app:openExternalUrl', url),
+  installUpdateAndRestart: (downloadUrl, sessionSnapshot) => ipcRenderer.invoke('app:installUpdateAndRestart', downloadUrl, sessionSnapshot),
+  saveSessionSnapshot: (snapshot) => ipcRenderer.invoke('session:saveSnapshot', snapshot),
+  loadSessionSnapshot: () => ipcRenderer.invoke('session:loadSnapshot'),
+  onUpdateProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('update:downloadProgress', listener);
+    return () => ipcRenderer.removeListener('update:downloadProgress', listener);
+  },
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),

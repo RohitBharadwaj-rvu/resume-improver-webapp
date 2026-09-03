@@ -3,11 +3,12 @@ export interface AppUpdateInfo {
   latestVersion: string;
   hasUpdate: boolean;
   releaseUrl: string;
+  downloadUrl: string;
   releaseNotes?: string;
   publishedAt?: string;
 }
 
-export const CURRENT_APP_VERSION = 'v1.0.2';
+export const CURRENT_APP_VERSION = 'v1.0.3';
 
 export function isNewerVersion(latest: string, current: string): boolean {
   const lParts = latest.replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
@@ -40,11 +41,19 @@ export async function checkGitHubUpdate(currentVersion: string = CURRENT_APP_VER
   const latestTag = (data.tag_name || '').trim();
   const hasUpdate = isNewerVersion(latestTag, currentVersion);
 
+  const zipAsset = Array.isArray(data.assets)
+    ? data.assets.find((a: any) => a.name && a.name.endsWith('.zip'))
+    : null;
+  const downloadUrl = zipAsset
+    ? zipAsset.browser_download_url
+    : `https://github.com/${repo}/releases/latest/download/Resume-ATS-Improver-Windows-x64.zip`;
+
   return {
     currentVersion,
     latestVersion: latestTag || currentVersion,
     hasUpdate,
     releaseUrl: data.html_url || `https://github.com/${repo}/releases/latest`,
+    downloadUrl,
     releaseNotes: data.body || '',
     publishedAt: data.published_at,
   };

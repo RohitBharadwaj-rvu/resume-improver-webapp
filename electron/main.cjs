@@ -1,6 +1,10 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const https = require('https');
+const http = require('http');
+const { spawn, execSync } = require('child_process');
 
 let mainWindow = null;
 
@@ -204,6 +208,167 @@ ipcMain.handle('storage:setSecureKey', async (event, key, value) => {
   config[key] = value;
   saveSecureConfig(config);
   return true;
+});
+
+// Session Snapshot Persistence for Updates
+const SESSION_RESTORE_PATH = path.join(app.getPath('userData'), 'session_restore.json');
+
+ipcMain.handle('session:saveSnapshot', async (event, snapshot) => {
+  try {
+    fs.writeFileSync(SESSION_RESTORE_PATH, JSON.stringify(snapshot, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    console.error('Error saving session snapshot:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('session:loadSnapshot', async () => {
+  try {
+    if (!fs.existsSync(SESSION_RESTORE_PATH)) return null;
+    const raw = fs.readFileSync(SESSION_RESTORE_PATH, 'utf8');
+    const data = JSON.parse(raw);
+    try { fs.unlinkSync(SESSION_RESTORE_PATH); } catch (e) {}
+    return data;
+  } catch (err) {
+    console.error('Error loading session snapshot:', err);
+    return null;
+  }
+});
+
+// Helper: Download file following HTTP/HTTPS redirects with live progress
+function downloadFileWithRedirects(fileUrl, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    function get(currentUrl, redirectCount = 0) {
+      if (redirectCount > 5) {
+        return reject(new Error('Too many redirects while downloading update'));
+      }
+
+      const client = currentUrl.startsWith('https') ? https : http;
+      const req = client.get(currentUrl, {
+        headers: {
+          'User-Agent': 'Resume-ATS-Improver-Updater',
+          'Accept': 'application/octet-stream',
+        },
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return get(res.headers.location, redirectCount + 1);
+        }
+
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed with HTTP status ${res.statusCode}`));
+        }
+
+        const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        let receivedBytes = 0;
+        const fileStream = fs.createWriteStream(destPath);
+
+        res.on('data', (chunk) => {
+          receivedBytes += chunk.length;
+          if (onProgress && totalBytes > 0) {
+            const percent = Math.round((receivedBytes / totalBytes) * 100);
+            onProgress(percent, receivedBytes, totalBytes);
+          }
+        });
+
+        res.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close(() => resolve(destPath));
+        });
+
+        fileStream.on('error', (err) => {
+          fs.unlink(destPath, () => {});
+          reject(err);
+        });
+      });
+
+      req.on('error', (err) => {
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+    }
+
+    get(fileUrl);
+  });
+}
+
+// In-App One-Click Update & Restart
+ipcMain.handle('app:installUpdateAndRestart', async (event, downloadUrl, sessionSnapshot) => {
+  try {
+    if (sessionSnapshot) {
+      try {
+        fs.writeFileSync(SESSION_RESTORE_PATH, JSON.stringify(sessionSnapshot), 'utf8');
+      } catch (e) {
+        console.error('Failed to save session for restart:', e);
+      }
+    }
+
+    const targetUrl = downloadUrl || 'https://github.com/RohitBharadwaj-rvu/resume-improver-webapp/releases/latest/download/Resume-ATS-Improver-Windows-x64.zip';
+    const tempZip = path.join(os.tmpdir(), `ResumeUpdate_${Date.now()}.zip`);
+    const tempExtract = path.join(os.tmpdir(), `ResumeExtract_${Date.now()}`);
+
+    // Download update with progress reports
+    await downloadFileWithRedirects(targetUrl, tempZip, (percent, received, total) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:downloadProgress', {
+          percent,
+          receivedMB: (received / 1024 / 1024).toFixed(1),
+          totalMB: (total / 1024 / 1024).toFixed(1),
+          status: 'downloading',
+        });
+      }
+    });
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:downloadProgress', {
+        percent: 100,
+        status: 'extracting',
+      });
+    }
+
+    // Extract zip
+    fs.mkdirSync(tempExtract, { recursive: true });
+    const extractCmd = `Expand-Archive -LiteralPath "${tempZip}" -DestinationPath "${tempExtract}" -Force`;
+    execSync(`powershell.exe -NoProfile -NonInteractive -Command "${extractCmd}"`, { windowsHide: true });
+
+    // Prepare updater script
+    const currentPid = process.pid;
+    const exePath = process.execPath;
+    const appDir = path.dirname(exePath);
+    const batPath = path.join(os.tmpdir(), `resume_apply_update_${Date.now()}.bat`);
+
+    const batContent = `@echo off\r\n` +
+      `chcp 65001 >nul\r\n` +
+      `timeout /t 2 /nobreak >nul\r\n` +
+      `taskkill /F /PID ${currentPid} 2>nul\r\n` +
+      `timeout /t 1 /nobreak >nul\r\n` +
+      `robocopy "${tempExtract}" "${appDir}" /E /IS /IT /NFL /NDL /NJH /NJS /nc /ns /np\r\n` +
+      `if %ERRORLEVEL% GEQ 8 ( xcopy /s /e /y /q "${tempExtract}\\*" "${appDir}\\" )\r\n` +
+      `rmdir /s /q "${tempExtract}" 2>nul\r\n` +
+      `del /f /q "${tempZip}" 2>nul\r\n` +
+      `start "" "${exePath}"\r\n` +
+      `del "%~f0" 2>nul\r\n` +
+      `exit\r\n`;
+
+    fs.writeFileSync(batPath, batContent, 'utf8');
+
+    // Spawn detached updater batch and quit application
+    const child = spawn('cmd.exe', ['/c', batPath], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
+    setTimeout(() => {
+      app.quit();
+    }, 500);
+
+    return { success: true };
+  } catch (err) {
+    console.error('Update and restart error:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('window:minimize', () => {
