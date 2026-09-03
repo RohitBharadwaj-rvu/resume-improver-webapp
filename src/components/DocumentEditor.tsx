@@ -28,6 +28,7 @@ interface DocumentEditorProps {
   onOpenHumanizerForSelection: (selectedText: string) => void;
   resumeFileName?: string;
   onFileLoaded?: (fileName: string) => void;
+  onRegisterInsertSnippet?: (inserter: (snippet: string, targetSection?: string) => boolean) => void;
 }
 
 export const DocumentEditor: React.FC<DocumentEditorProps> = ({
@@ -35,6 +36,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   onOpenHumanizerForSelection,
   resumeFileName = 'Ajitkumar Subramanyam -  PO June 2nd 2026.docx',
   onFileLoaded,
+  onRegisterInsertSnippet,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docxContainerRef = useRef<HTMLDivElement>(null);
@@ -60,20 +62,16 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
         ignoreHeight: false,
         ignoreFonts: false,
         breakPages: true,
+        ignoreLastRenderedPageBreak: false,
         experimental: true,
         trimXmlDeclaration: true,
+        useBase64URL: true,
       });
 
-      // Make all rendered pages contentEditable for direct in-place editing
-      const wrapper = docxContainerRef.current.querySelector('.docx-wrapper');
-      if (wrapper) {
-        wrapper.setAttribute('contenteditable', 'true');
-        wrapper.setAttribute('spellcheck', 'false');
-      }
-
-      const sections = docxContainerRef.current.querySelectorAll('section.docx');
+      const sections = docxContainerRef.current.querySelectorAll('section, .docx-preview');
       sections.forEach((sec) => {
         sec.setAttribute('contenteditable', 'true');
+        sec.setAttribute('spellcheck', 'true');
       });
 
       // Extract initial plain text and update word count
@@ -114,13 +112,116 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   }, [renderDocx, onFileLoaded]);
 
   // Handle user typing and changes inside the contentEditable document
-  const handleContentInput = () => {
+  const handleContentInput = useCallback(() => {
     if (!docxContainerRef.current) return;
     const text = docxContainerRef.current.innerText || '';
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     setWordCount(words);
     onChange(docxContainerRef.current.innerHTML);
-  };
+  }, [onChange]);
+
+  // Layout-aware insertion: Inserts snippets into the target section without breaking tables or layout
+  useEffect(() => {
+    if (onRegisterInsertSnippet) {
+      onRegisterInsertSnippet((snippet: string, targetSection: string = 'Experience') => {
+        if (!docxContainerRef.current) return false;
+
+        // 1. If user has an active selection or caret inside the document, insert at cursor
+        const selection = window.getSelection();
+        if (
+          selection &&
+          selection.rangeCount > 0 &&
+          docxContainerRef.current.contains(selection.anchorNode)
+        ) {
+          const range = selection.getRangeAt(0);
+          range.deleteContents();
+          const textNode = document.createTextNode(snippet);
+          range.insertNode(textNode);
+          handleContentInput();
+          return true;
+        }
+
+        // 2. Otherwise, find the target section container (e.g. Experience, Profile, Skills)
+        const sectionKeywords = targetSection.toLowerCase().split(/[\s&/]+/);
+        const allElements = Array.from(docxContainerRef.current.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, span, div, td'));
+
+        let targetHeaderEl: HTMLElement | null = null;
+        for (const el of allElements) {
+          const text = el.innerText ? el.innerText.trim().toLowerCase() : '';
+          if (text.length > 2 && text.length < 40) {
+            if (sectionKeywords.some((kw) => text.includes(kw))) {
+              targetHeaderEl = el;
+              break;
+            }
+          }
+        }
+
+        let containerCell: HTMLElement | null = null;
+        let referenceSibling: HTMLElement | null = null;
+
+        if (targetHeaderEl) {
+          const cell = targetHeaderEl.closest('td, section, div');
+          if (cell) {
+            containerCell = cell as HTMLElement;
+            const existingList = cell.querySelector('ul, ol');
+            if (existingList) {
+              referenceSibling = existingList.lastElementChild as HTMLElement;
+            } else {
+              const paras = Array.from(cell.querySelectorAll('p'));
+              if (paras.length > 0) {
+                referenceSibling = paras[paras.length - 1];
+              }
+            }
+          }
+        }
+
+        // Fallback: If no section header matched, find the main content column (widest td or section)
+        if (!containerCell) {
+          const cells = Array.from(docxContainerRef.current.querySelectorAll('td'));
+          if (cells.length > 0) {
+            cells.sort((a, b) => ((b as HTMLElement).innerText || '').length - ((a as HTMLElement).innerText || '').length);
+            containerCell = cells[0] as HTMLElement;
+            const paras = Array.from(containerCell.querySelectorAll('p'));
+            if (paras.length > 0) referenceSibling = paras[paras.length - 1];
+          } else {
+            containerCell = (docxContainerRef.current.querySelector('section') || docxContainerRef.current) as HTMLElement;
+          }
+        }
+
+        // 3. Create the new element preserving identical sibling styling
+        const isList = referenceSibling && referenceSibling.tagName === 'LI';
+        const newEl = document.createElement(isList ? 'li' : 'p');
+
+        if (referenceSibling) {
+          newEl.className = referenceSibling.className;
+          newEl.style.cssText = referenceSibling.style.cssText;
+        }
+
+        newEl.innerText = snippet;
+        newEl.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+        newEl.style.borderLeft = '3px solid #10b981';
+        newEl.style.paddingLeft = '6px';
+        newEl.style.transition = 'all 1.5s ease';
+
+        if (referenceSibling && referenceSibling.parentElement) {
+          referenceSibling.parentElement.appendChild(newEl);
+        } else {
+          containerCell.appendChild(newEl);
+        }
+
+        // Scroll into view smoothly and remove temporary highlight
+        newEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        setTimeout(() => {
+          newEl.style.backgroundColor = 'transparent';
+          newEl.style.borderLeft = 'none';
+          newEl.style.paddingLeft = '0px';
+        }, 3000);
+
+        handleContentInput();
+        return true;
+      });
+    }
+  }, [onRegisterInsertSnippet, handleContentInput]);
 
   // Selection change listener to detect highlighted text for Humanizer
   const handleSelectionChange = () => {

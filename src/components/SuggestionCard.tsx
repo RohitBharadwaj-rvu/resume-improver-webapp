@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import type { Suggestion } from '../types';
 import {
   Copy,
@@ -169,7 +169,12 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
           <div className="flex items-center gap-1.5 w-full">
             <button
               type="button"
-              onClick={() => onStatusChange(suggestion.id, 'accepted')}
+              onClick={() => {
+                if (onInsertIntoEditor && suggestion.referenceSnippet) {
+                  onInsertIntoEditor(suggestion.referenceSnippet);
+                }
+                onStatusChange(suggestion.id, 'accepted');
+              }}
               className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors shadow-2xs"
             >
               <CheckCircle className="w-3.5 h-3.5" />

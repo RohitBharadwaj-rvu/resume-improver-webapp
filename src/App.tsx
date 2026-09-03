@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { JobDescriptionPanel } from './components/JobDescriptionPanel';
 import { DocumentEditor } from './components/DocumentEditor';
@@ -176,8 +176,12 @@ export function App() {
     setIsHumanizerOpen(true);
   };
 
+  const insertSnippetRef = useRef<((snippet: string, targetSection?: string) => boolean) | null>(null);
+
   const handleInsertHumanizedText = (text: string) => {
-    setResumeHtml((prev) => `${prev}<p>${text}</p>`);
+    if (insertSnippetRef.current) {
+      insertSnippetRef.current(text, 'Experience');
+    }
   };
 
   const handleExportDocx = async () => {
@@ -200,19 +204,19 @@ export function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-100 overflow-hidden font-sans select-none">
-      {/* Top Header Bar */}
+    <div className="h-screen w-screen flex flex-col bg-slate-100 text-slate-900 font-sans overflow-hidden">
+      {/* Top Header & Navigation */}
       <Header
-        overallScore={atsBreakdown.overallScore}
-        isAnalyzing={isAnalyzing}
-        onReevaluate={() => evaluateResume(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onReevaluate={() => evaluateResume(true)}
         onExportDocx={handleExportDocx}
+        isAnalyzing={isAnalyzing}
+        overallScore={atsBreakdown.overallScore}
       />
 
-      {/* Error Banner */}
+      {/* Dynamic API Status Warning Banner */}
       {analysisError && (
-        <div className="bg-rose-600 text-white px-4 py-2 flex items-center justify-between text-xs font-medium shadow-xs z-10 shrink-0">
+        <div className="bg-rose-600 text-white px-4 py-2 flex items-center justify-between text-xs shadow-xs z-10 shrink-0">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4" />
             <span>{analysisError}</span>
@@ -256,6 +260,9 @@ export function App() {
             }
             resumeFileName={resumeFileName}
             onFileLoaded={(name) => setResumeFileName(name)}
+            onRegisterInsertSnippet={(inserter) => {
+              insertSnippetRef.current = inserter;
+            }}
           />
         </section>
 
